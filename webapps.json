@@ -1,0 +1,10 @@
+[
+  {
+    "name": "XPRA",
+    "title": "Xpra Desktop",
+    "icon": "xprahtml5/favicon.ico",
+    "url": "xprahtml5/index.html",
+    "start": true,
+    "mode": "split-left"
+  }
+]

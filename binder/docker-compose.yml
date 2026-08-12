@@ -1,0 +1,34 @@
+version: '3'
+services:
+  binder-template:
+    image: binder-template:main
+    build:
+      context: ../
+      dockerfile: ./binder/Dockerfile
+    stdin_open: true
+    tty: true
+    user: root
+    working_dir: /home/repo
+    command: jupyter lab --allow-root --NotebookApp.token='' --no-browser --ip=0.0.0.0
+    ports:
+      - 8888:8888
+    volumes:
+      - ../:/home/repo:rw
+      - /tmp/.X11-unix:/tmp/.X11-unix:rw  # X11 socket for GUI apps
+    environment:
+      - AUTO_START_RVIZ=1
+      - AUTO_OPEN_DESKTOP=0
+      - AUTO_OPEN_DESKTOP_ANCHOR=split-right
+      - RVIZ_DISPLAY=:1
+      - RVIZ_CONFIG_FILE=/home/jovyan/.rviz2/default.rviz
+      - LIBGL_ALWAYS_SOFTWARE=1
+      - QT_X11_NO_MITSHM=1
+      - DISPLAY=${DISPLAY}  # Use host display for GUI apps
+      - NVIDIA_DRIVER_CAPABILITIES=all
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]

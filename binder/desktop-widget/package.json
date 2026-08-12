@@ -1,0 +1,29 @@
+{
+  "name": "desktop-widget",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Minimal JupyterLab extension that opens the remote desktop in a docked panel.",
+  "license": "BSD-3-Clause",
+  "files": [
+    "lib/**/*",
+    "style/**/*"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "clean": "rm -rf lib tsconfig.tsbuildinfo"
+  },
+  "dependencies": {
+    "@jupyterlab/application": "^4.4.0",
+    "@jupyterlab/apputils": "^4.5.0",
+    "@jupyterlab/coreutils": "^6.4.0",
+    "@jupyterlab/docmanager": "^4.4.0",
+    "@jupyterlab/notebook": "^4.4.0",
+    "@lumino/widgets": "^2.7.0"
+  },
+  "devDependencies": {
+    "typescript": "~5.8.3"
+  },
+  "jupyterlab": {
+    "extension": "lib/index.js"
+  }
+}
