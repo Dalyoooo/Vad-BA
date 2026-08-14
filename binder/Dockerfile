@@ -7,11 +7,10 @@ USER root
 RUN apt update && apt install -y --no-install-recommends     graphviz     libgraphviz-dev     pkg-config     python3-dev     build-essential     ffmpeg &&     rm -rf /var/lib/apt/lists/*
 
 # Install python packages
-# torch first, and explicitly the CPU build: speechbrain depends on it, and the
-# default PyPI wheel would drag in ~2 GB of CUDA libraries this container never
-# uses. Installing it up front means pip treats the dependency as satisfied.
 RUN python3 -m pip install --no-cache-dir \
     torch --index-url https://download.pytorch.org/whl/cpu
+RUN python3 -m pip install --no-cache-dir \
+    llama-cpp-python --extra-index-url https://abetlen.github.io/llama-cpp-python/whl/cpu
 COPY requirements.txt /tmp/requirements.txt
 RUN python3 -m pip install -r /tmp/requirements.txt
 #===========================================================#
@@ -35,11 +34,6 @@ RUN apt update && apt install -y --no-install-recommends \
 
 # ------------------------------------------------------------
 # Install demo repository and cram code
-#
-# One block on purpose: the demo repository is cloned first, so its
-# thesis_demo_msgs interface package can be copied into the ROS workspace
-# before colcon builds it. That package defines the execute_plan action the
-# speech demo uses, and colcon only builds what sits under /workspace/ros/src.
 # ------------------------------------------------------------
 
 RUN python3 -m pip install poetry
@@ -82,13 +76,8 @@ RUN set -ex && \
     echo "source /workspace/ros/install/setup.bash" >> /root/.bashrc
 
 # ------------------------------------------------------------
-# Speech models: fetch at build time, not per session
+# Speech models
 # ------------------------------------------------------------
-# The image is built as root while the notebook runs as jovyan, so a cache under
-# /root would be unreadable at runtime. Everything goes to a shared directory,
-# and HF_HOME points there for both build and runtime. Writable, not just
-# readable: the planner GGUF below is not pre-fetched, so the first run has to
-# download it into this same cache.
 ENV MODEL_CACHE=/opt/model-cache
 ENV HF_HOME=${MODEL_CACHE}/huggingface
 ENV ECAPA_MODEL_DIR=${MODEL_CACHE}/ecapa
@@ -98,11 +87,7 @@ RUN mkdir -p ${HF_HOME} ${ECAPA_MODEL_DIR} && \
     python3 -c "from speechbrain.inference.speaker import EncoderClassifier; EncoderClassifier.from_hparams(source='speechbrain/spkrec-ecapa-voxceleb', savedir='${ECAPA_MODEL_DIR}')" && \
     chmod -R a+rwX ${MODEL_CACHE}
 
-# The planner GGUF is roughly 4.9 GB, which would dominate the image size, so it
-# is left out by default and downloaded on first use instead. Enable this only
-# if the VRB has no reliable network at runtime, and expect the image to grow
-# accordingly. PLANNER_GGUF_MODEL / PLANNER_GGUF_FILE are the same variables
-# thesis_demo.planner.llm reads.
+# Optional: pre-fetch the planner GGUF (~4.9 GB) instead of downloading on first use.
 # ENV PLANNER_GGUF_MODEL=wijan/Robot-Action-Planner-GGUF
 # ENV PLANNER_GGUF_FILE=meta-llama-3.1-8b-instruct.Q4_K_M.gguf
 # RUN python3 -c "from huggingface_hub import hf_hub_download; hf_hub_download(repo_id='${PLANNER_GGUF_MODEL}', filename='${PLANNER_GGUF_FILE}')" && \

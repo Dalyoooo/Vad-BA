@@ -21,24 +21,9 @@ semantic_digital_twin
 scikit-image
 owlready2
 SPARQLWrapper
-
-# --- speech pipeline (thesis_demo) ---
-# faster-whisper ships Silero VAD, so segmentation needs nothing extra. The apt
-# block must include ffmpeg: browser recordings arrive as webm and are converted
-# to wav before transcription.
 faster-whisper
-# Microphone capture inside the notebook. Browsers only grant audio access after
-# a user gesture, so recording is always started by a click.
 ipywebrtc
 huggingface_hub
 librosa
 scikit-learn
-
-# Speaker separation (ECAPA). Pulls in torch, so the Dockerfile installs the
-# CPU-only build first; otherwise pip adds ~2 GB of CUDA libraries that the VRB
-# container cannot use anyway.
 speechbrain
-
-# Planner LLM. Built from source, which needs build-essential and python3-dev;
-# both are already in the apt block.
-llama-cpp-python
