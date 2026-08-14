@@ -40,7 +40,7 @@ RUN python3 -m pip install poetry
 RUN set -ex && \
     poetry config virtualenvs.create false && \
     mkdir -p ${HOME}/libs && cd ${HOME}/libs && \
-    git clone --branch Dalia-BA-Thesis --single-branch https://github.com/Dalyoooo/cognitive_robot_abstract_machine.git && \
+    git clone --branch binder-build --single-branch https://github.com/Dalyoooo/cognitive_robot_abstract_machine.git && \
     cd cognitive_robot_abstract_machine && \
     git pull && \
     git clone https://github.com/sunava/pycram_object_gap_demo.git pycram/resources/pycram_object_gap_demo && \

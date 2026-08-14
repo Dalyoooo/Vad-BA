@@ -19,8 +19,10 @@ import base64
 import io
 import json
 import os
+import subprocess
 import sys
 import threading
+import time
 import traceback
 from pathlib import Path
 
@@ -59,6 +61,12 @@ EXECUTE_PLAN_ACTION = "execute_plan"
 
 ACTION_SERVER_TIMEOUT_S = 5.0
 """How long to wait for that action server before giving up."""
+
+WORLD_STARTUP_CHECKS = 60
+"""How many times to look for the world context after starting the world."""
+
+WORLD_CHECK_INTERVAL_S = 2.0
+"""Seconds between those checks."""
 
 WAVEFORM_ENVELOPE_POINTS = 2000
 """Points the waveform is reduced to; enough for the shape, cheap to draw."""
@@ -130,6 +138,39 @@ def _ensure_diarizer():
 
 def _run_dir():
     return Path(os.environ.get(RUN_DIR_VARIABLE, DEFAULT_RUN_DIR)).expanduser()
+
+
+def _demo_search_path():
+    """Directories holding the demo package, as a PYTHONPATH value."""
+    return os.pathsep.join(str(p) for p in DEMO_MODULE_SEARCH_PATHS if p.is_dir())
+
+
+def start_world():
+    """Launch the action server that builds the world and publishes its context.
+
+    It runs as its own process, which does not inherit the search path this
+    module added to ``sys.path``, so PYTHONPATH is passed explicitly.
+    """
+    environment = dict(os.environ)
+    existing = environment.get("PYTHONPATH", "")
+    search_path = _demo_search_path()
+    environment["PYTHONPATH"] = (
+        f"{search_path}{os.pathsep}{existing}" if existing else search_path
+    )
+    _run_dir().mkdir(parents=True, exist_ok=True)
+    log_file = _run_dir() / "action_server.log"
+    process = subprocess.Popen(
+        [sys.executable, "-m", "thesis_demo.action_server"],
+        stdout=log_file.open("w"),
+        stderr=subprocess.STDOUT,
+        env=environment,
+    )
+    return process, log_file
+
+
+def world_is_ready():
+    """Whether the action server has published a world context yet."""
+    return (_run_dir() / WORLD_CONTEXT_FILE_NAME).is_file()
 
 
 def _load_world_context():
@@ -294,6 +335,38 @@ def _build_recorder():
         return None
 
 
+def _wire_world_button(button, log):
+    """Start the world on click and report when its context appears."""
+    def clicked(_button):
+        button.disabled = True
+
+        def work():
+            try:
+                if world_is_ready():
+                    log("World already running.")
+                    return
+                log("Starting the world, this takes a moment ...")
+                _, log_file = start_world()
+                for _ in range(WORLD_STARTUP_CHECKS):
+                    if world_is_ready():
+                        log("World ready.")
+                        return
+                    time.sleep(WORLD_CHECK_INTERVAL_S)
+                log(
+                    "World did not report ready in time. Last lines of "
+                    f"{log_file}:<br><pre>{log_file.read_text()[-800:]}</pre>"
+                )
+            except Exception:
+                log("Error starting the world &mdash; see below.")
+                raise
+            finally:
+                button.disabled = False
+
+        threading.Thread(target=work, daemon=True).start()
+
+    button.on_click(clicked)
+
+
 def run_vad_ui():
     header = widgets.HTML("<h3>Context-aware speech understanding</h3>")
     recorder = _build_recorder()
@@ -301,6 +374,9 @@ def run_vad_ui():
         accept="audio/*,.wav,.webm,.mp3,.ogg",
         multiple=False,
         description="Audio clip",
+    )
+    world_button = widgets.Button(
+        description="Start world", button_style="info"
     )
     understand_button = widgets.Button(
         description="Understand scene", button_style="primary", disabled=True
@@ -440,11 +516,12 @@ def run_vad_ui():
 
         threading.Thread(target=work, daemon=True).start()
 
+    _wire_world_button(world_button, log)
     upload.observe(_on_upload, names="value")
     understand_button.on_click(_understand)
     execute_button.on_click(_execute)
 
-    controls = [upload, understand_button, execute_button]
+    controls = [world_button, upload, understand_button, execute_button]
     if recorder is not None:
         recorder.audio.observe(_on_recording, names="value")
         controls.insert(0, recorder)
