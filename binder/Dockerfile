@@ -8,7 +8,7 @@ RUN apt update && apt install -y --no-install-recommends     graphviz     libgra
 
 # Install python packages
 RUN python3 -m pip install --no-cache-dir \
-    torch --index-url https://download.pytorch.org/whl/cpu
+    torch torchaudio --index-url https://download.pytorch.org/whl/cpu
 RUN python3 -m pip install --no-cache-dir \
     llama-cpp-python --extra-index-url https://abetlen.github.io/llama-cpp-python/whl/cpu
 COPY requirements.txt /tmp/requirements.txt
