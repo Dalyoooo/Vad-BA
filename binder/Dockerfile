@@ -49,6 +49,8 @@ RUN set -ex && \
     mkdir -p /workspace/ros/src && \
     cd /workspace/ros/src && \
     cp -r ${HOME}/libs/cognitive_robot_abstract_machine/thesis_demo_msgs . && \
+    test -f thesis_demo_msgs/CMakeLists.txt && \
+    test -f thesis_demo_msgs/package.xml && \
     git clone -b ros-jazzy --single-branch https://github.com/code-iai/iai_maps.git && \
     git clone -b ros-jazzy-main --single-branch https://github.com/code-iai/iai_pr2.git && \
     git clone -b ros-jazzy --single-branch https://github.com/code-iai/iai_robots.git && \
