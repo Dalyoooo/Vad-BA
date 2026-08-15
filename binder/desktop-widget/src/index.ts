@@ -12,7 +12,7 @@ import { Widget } from '@lumino/widgets';
 
 const COMMAND_ID = 'desktop-widget:open';
 const NAMESPACE = 'desktop-widget';
-const DEFAULT_NOTEBOOK = 'notebooks/vad_demo.ipynb';
+const DEFAULT_NOTEBOOK = 'notebooks/demo.ipynb';
 
 const startupFlag = (name: string, defaultValue = true): boolean => {
   const params = new URLSearchParams(window.location.search);
