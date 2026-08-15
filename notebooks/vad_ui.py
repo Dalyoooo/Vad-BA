@@ -493,6 +493,17 @@ AUTO_RECORDING_SILENCE_HOLD_MS = 1500
 AUTO_RECORDING_MAX_MS = 40000
 """Hard limit, so a stuck microphone cannot record forever."""
 
+SAMPLE_SCENE_NAME = "assets/sample-scene.webm"
+"""A recorded scene shipped with the repository.
+
+Three utterances in two voices, naming objects this world actually holds, so
+the demo can be shown where no microphone is available or permitted.
+"""
+
+
+def sample_scene_path():
+    return Path(__file__).resolve().parent / SAMPLE_SCENE_NAME
+
 
 def _auto_recording_path():
     """Where the finished recording lands, next to this module."""
@@ -809,6 +820,11 @@ def run_vad_ui():
     stop_world_button = widgets.Button(
         description="Stop world", button_style="warning", disabled=True
     )
+    sample_button = widgets.Button(
+        description="Play sample scene",
+        tooltip="Run the shipped recording through the whole chain",
+        disabled=not sample_scene_path().is_file(),
+    )
     understand_button = widgets.Button(
         description="Understand scene", button_style="primary", disabled=True
     )
@@ -980,7 +996,17 @@ def run_vad_ui():
     understand_button.on_click(_understand)
     execute_button.on_click(_execute)
 
-    controls = [upload, understand_button, execute_button]
+    def _play_sample(_button):
+        _accept_audio(
+            sample_scene_path().read_bytes(),
+            "Sample scene",
+            "Running the whole chain ...",
+        )
+        _run_whole_chain()
+
+    sample_button.on_click(_play_sample)
+
+    controls = [upload, sample_button, understand_button, execute_button]
     if recorder is not None:
         recorder.audio.observe(_on_recording, names="value")
         controls.insert(0, recorder)
