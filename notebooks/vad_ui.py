@@ -468,8 +468,12 @@ def _counts_line(triage):
 AUTO_RECORDER_CONTAINER_ID = "vad-auto-recorder"
 """Element the browser-side recorder attaches its controls to."""
 
-AUTO_RECORDING_NAME = ".scene-recording.webm"
-"""File the browser writes a finished recording to."""
+AUTO_RECORDING_NAME = "scene-recording.webm"
+"""File the browser writes a finished recording to.
+
+Deliberately not a dotted name: the notebook server refuses to create hidden
+files through its file interface, which is the route the recording takes.
+"""
 
 AUTO_RECORDING_POLL_S = 0.5
 """Seconds between looks for that file."""
@@ -524,7 +528,20 @@ def _auto_recorder_script():
   container.appendChild(button);
   container.appendChild(status);
 
-  var baseUrl = (document.body.dataset.baseUrl) || "/";
+  // The page carries its own address in the notebook server's config block.
+  // Guessing "/" instead lands on the hub in front of the server, which
+  // answers the upload with a redirect to its login page.
+  var configElement = document.getElementById("jupyter-config-data");
+  var baseUrl = "/";
+  if (configElement) {{
+    try {{
+      baseUrl = JSON.parse(configElement.textContent).baseUrl || baseUrl;
+    }} catch (error) {{
+      baseUrl = document.body.dataset.baseUrl || baseUrl;
+    }}
+  }} else if (document.body.dataset.baseUrl) {{
+    baseUrl = document.body.dataset.baseUrl;
+  }}
 
   function xsrfToken() {{
     var match = document.cookie.match(/\\b_xsrf=([^;]+)/);
@@ -546,7 +563,15 @@ def _auto_recorder_script():
             format: "base64",
             content: String(reader.result).split(",")[1]
           }})
-        }}).then(resolve, reject);
+        }}).then(function (response) {{
+          // A refused upload still resolves, so without this check a lost
+          // recording would be reported as a delivered one.
+          if (response.ok) {{
+            resolve();
+          }} else {{
+            reject(new Error("server answered " + response.status));
+          }}
+        }}, reject);
       }};
       reader.readAsDataURL(blob);
     }});
