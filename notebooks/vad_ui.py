@@ -114,24 +114,30 @@ ROLE_BACKGROUNDS = {
 
 _state = {"whisper": False, "planner": False, "diarizer": None}
 
+_load_locks = {name: threading.Lock() for name in _state}
+"""One lock per model, so a click during preloading joins the load in progress
+instead of starting a second one."""
+
 
 # %% lazy model setup
 
 def _ensure_whisper():
-    if not _state["whisper"]:
-        from thesis_demo.audio.transcriber import setup_whisper
+    with _load_locks["whisper"]:
+        if not _state["whisper"]:
+            from thesis_demo.audio.transcriber import setup_whisper
 
-        setup_whisper()
-        _state["whisper"] = True
+            setup_whisper()
+            _state["whisper"] = True
 
 
 def _ensure_planner():
-    if not _state["planner"]:
-        from thesis_demo.planner.llm import is_planner_ready, load_planner
+    with _load_locks["planner"]:
+        if not _state["planner"]:
+            from thesis_demo.planner.llm import is_planner_ready, load_planner
 
-        if not is_planner_ready():
-            load_planner()
-        _state["planner"] = True
+            if not is_planner_ready():
+                load_planner()
+            _state["planner"] = True
 
 
 def _ensure_diarizer():
@@ -140,14 +146,62 @@ def _ensure_diarizer():
     .. note:: Without the ECAPA backend the pipeline still runs; it just cannot
         merge repeated claims from one voice.
     """
-    if _state["diarizer"] is None:
-        from thesis_demo.audio.diarization import load_diarizer
+    with _load_locks["diarizer"]:
+        if _state["diarizer"] is None:
+            from thesis_demo.audio.diarization import load_diarizer
 
-        try:
-            _state["diarizer"] = load_diarizer(EmbeddingBackend.ECAPA)
-        except ModuleNotFoundError:
-            _state["diarizer"] = load_diarizer(EmbeddingBackend.MFCC)
+            try:
+                _state["diarizer"] = load_diarizer(EmbeddingBackend.ECAPA)
+            except ModuleNotFoundError:
+                _state["diarizer"] = load_diarizer(EmbeddingBackend.MFCC)
     return _state["diarizer"]
+
+
+PRELOADED_MODELS = (
+    ("speech recognition", _ensure_whisper),
+    ("speaker separation", _ensure_diarizer),
+    ("planner", _ensure_planner),
+)
+"""Models fetched ahead of the first click, with the names shown while waiting."""
+
+
+def _preload_models(label):
+    """Load the heavy models while the world is being set up.
+
+    Together they take minutes to come up. Loading them on first use puts that
+    wait behind a button press, where nothing appears to happen; starting them
+    here overlaps it with choosing a robot and building the world. The label
+    reports what is still missing, so a slow first run is explained rather than
+    silent.
+    """
+    pending = {name for name, _ in PRELOADED_MODELS}
+    failures = []
+    lock = threading.Lock()
+
+    def render():
+        parts = []
+        if pending:
+            parts.append(f"Loading {', '.join(sorted(pending))} ...")
+        elif not failures:
+            parts.append("Models ready.")
+        parts.extend(failures)
+        label.value = f"<i>{'<br>'.join(parts)}</i>"
+
+    def load(name, ensure):
+        try:
+            ensure()
+            problem = None
+        except Exception as error:
+            problem = f"{name} unavailable: {error}"
+        with lock:
+            pending.discard(name)
+            if problem:
+                failures.append(problem)
+            render()
+
+    render()
+    for name, ensure in PRELOADED_MODELS:
+        threading.Thread(target=load, args=(name, ensure), daemon=True).start()
 
 
 # %% world context and execution, via the action server's file interface
@@ -544,6 +598,7 @@ def run_vad_ui():
         else "Upload a recorded scene to begin (ipywebrtc missing, so no "
              "in-browser recording)."
     )
+    models_status = widgets.HTML("")
     waveform_area = widgets.HTML("")
     table_area = widgets.HTML("")
     instruction_area = widgets.HTML("")
@@ -696,6 +751,7 @@ def run_vad_ui():
                 widgets.HBox([world_button, stop_world_button]),
                 widgets.HBox(controls),
                 status,
+                models_status,
                 waveform_area,
                 table_area,
                 instruction_area,
@@ -703,3 +759,6 @@ def run_vad_ui():
             ]
         )
     )
+
+    # After display, so the first report has somewhere to appear.
+    _preload_models(models_status)
