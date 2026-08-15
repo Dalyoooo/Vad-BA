@@ -954,7 +954,20 @@ def run_vad_ui():
             report(json.dumps(result.payload, indent=2))
             if result.outcome == "plan":
                 outcome = _send_plan_for_execution(result.payload, log)
-                log(f"Execution finished: {outcome.get('status', 'unknown')}")
+                status = outcome.get("status", "unknown")
+                if status == "ok":
+                    log("Execution finished: ok")
+                else:
+                    # Without the phase and the message there is nothing to act
+                    # on: the world, the plan and the robot all fail the same
+                    # way from the outside.
+                    detail = ", ".join(
+                        str(outcome[key])
+                        for key in ("phase", "error", "step_index")
+                        if outcome.get(key) is not None
+                    )
+                    log(f"Execution finished: {status}"
+                        + (f" &mdash; {detail}" if detail else ""))
             elif result.outcome == "clarification":
                 log(f"Planner asks: {result.payload}")
             else:
