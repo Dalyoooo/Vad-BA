@@ -496,8 +496,12 @@ AUTO_RECORDING_MAX_MS = 40000
 SAMPLE_SCENE_NAME = "assets/sample-scene.webm"
 """A recorded scene shipped with the repository.
 
-Three utterances in two voices, naming objects this world actually holds, so
-the demo can be shown where no microphone is available or permitted.
+Three utterances in two voices: a command asking for two forks on the table, a
+remark that one is already lying there, and a word about the weather. It names
+objects this world holds and says where they go, so a plan has somewhere to
+put them, and the remark is a plain change in how many, which is what the
+counting is built to handle. Lets the demo be shown where no microphone is
+available or permitted.
 """
 
 
