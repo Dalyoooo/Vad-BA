@@ -68,6 +68,15 @@ WORLD_STARTUP_CHECKS = 60
 WORLD_CHECK_INTERVAL_S = 2.0
 """Seconds between those checks."""
 
+PLANNER_MAX_ATTEMPTS = 2
+"""Plan generations allowed per click.
+
+A rejected plan comes back with the reason it was rejected, which the model
+gets to see, so a second pass usually repairs a step the guard refused. The
+library default of one attempt stays untouched, because the recorded
+evaluation runs depend on it.
+"""
+
 WAVEFORM_ENVELOPE_POINTS = 2000
 """Points the waveform is reduced to; enough for the shape, cheap to draw."""
 
@@ -522,11 +531,16 @@ def run_vad_ui():
 
         def work():
             try:
+                from thesis_demo.planner.llm import InferenceConfiguration
                 from thesis_demo.planner.llm import plan as run_planner
 
                 log("Planning ...")
                 result = run_planner(
-                    session["triage"].instruction, context=session["context"]
+                    session["triage"].instruction,
+                    context=session["context"],
+                    inference=InferenceConfiguration(
+                        max_attempts=PLANNER_MAX_ATTEMPTS
+                    ),
                 )
                 clear_report()
                 report(json.dumps(result.payload, indent=2))
