@@ -496,12 +496,13 @@ AUTO_RECORDING_MAX_MS = 40000
 SAMPLE_SCENE_NAME = "assets/sample-scene.webm"
 """A recorded scene shipped with the repository.
 
-Three utterances in two voices: a command asking for two forks on the table, a
-remark that one is already lying there, and a word about the weather. It names
-objects this world holds and says where they go, so a plan has somewhere to
-put them, and the remark is a plain change in how many, which is what the
-counting is built to handle. Lets the demo be shown where no microphone is
-available or permitted.
+Three utterances in two voices: a command asking for two forks from the drawer
+on the table, a remark that one is already lying there, and a word about the
+weather. The command names the object, where it comes from and where it goes,
+which is the shape the planner turns into a single transport rather than a
+pick-up whose destination it then has to guess. The remark is a plain change in
+how many, which is what the counting is built to handle. Lets the demo be shown
+where no microphone is available or permitted.
 """
 
 
