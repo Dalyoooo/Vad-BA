@@ -26,6 +26,7 @@ RUN apt update && apt install -y --no-install-recommends \
     ros-jazzy-control-msgs \
     ros-jazzy-xacro \
     ros-jazzy-rqt-joint-trajectory-controller \
+    ros-jazzy-rclpy \
     ros-jazzy-rclpy-message-converter \
     python3-vcstool \
     nodejs \
@@ -36,6 +37,8 @@ RUN apt update && apt install -y --no-install-recommends \
 # ------------------------------------------------------------
 # Install demo repository and cram code
 # ------------------------------------------------------------
+ENV CRAM_REPOSITORY=${HOME}/libs/cognitive_robot_abstract_machine
+ENV PYTHONPATH=${CRAM_REPOSITORY}/pycram/demos
 
 RUN python3 -m pip install poetry
 RUN set -ex && \
@@ -90,11 +93,12 @@ RUN mkdir -p ${HF_HOME} ${ECAPA_MODEL_DIR} && \
     python3 -c "from speechbrain.inference.speaker import EncoderClassifier; EncoderClassifier.from_hparams(source='speechbrain/spkrec-ecapa-voxceleb', savedir='${ECAPA_MODEL_DIR}')" && \
     chmod -R a+rwX ${MODEL_CACHE}
 
-# Optional: pre-fetch the planner GGUF (~4.9 GB) instead of downloading on first use.
-# ENV PLANNER_GGUF_MODEL=wijan/Robot-Action-Planner-GGUF
-# ENV PLANNER_GGUF_FILE=meta-llama-3.1-8b-instruct.Q4_K_M.gguf
-# RUN python3 -c "from huggingface_hub import hf_hub_download; hf_hub_download(repo_id='${PLANNER_GGUF_MODEL}', filename='${PLANNER_GGUF_FILE}')" && \
-#     chmod -R a+rX ${MODEL_CACHE}
+ARG PLANNER_GGUF_REVISION=e3ffdd293a59bda6fa13756ab2cc47ee7eb9e90b
+ENV PLANNER_GGUF_MODEL=wijan/Robot-Action-Planner-GGUF
+ENV PLANNER_GGUF_DIR=/opt/planner-model
+ENV PLANNER_GGUF_FILE=/opt/planner-model/meta-llama-3.1-8b-instruct.Q4_K_M.gguf
+RUN python3 -c "import os; from huggingface_hub import snapshot_download; snapshot_download(os.environ['PLANNER_GGUF_MODEL'], revision='${PLANNER_GGUF_REVISION}', local_dir=os.environ['PLANNER_GGUF_DIR'], allow_patterns=[os.path.basename(os.environ['PLANNER_GGUF_FILE'])])" && \
+    chmod -R a+rX ${PLANNER_GGUF_DIR}
 
 # ------------------------------------------------------------
 # ROS2 workspace: giskardpy_ros (clone, deps, build)
