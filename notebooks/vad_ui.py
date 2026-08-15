@@ -168,9 +168,38 @@ def start_world():
     return process, log_file
 
 
+ACTION_SERVER_MODULE = "thesis_demo.action_server"
+
+
+def _action_server_is_alive():
+    """Whether an action server process is currently running.
+
+    Scans the process table rather than tracking a handle, so a world started
+    from an earlier kernel or from a terminal is recognised as well.
+    """
+    for entry in Path("/proc").iterdir():
+        if not entry.name.isdigit():
+            continue
+        try:
+            command = (entry / "cmdline").read_bytes().decode(errors="ignore")
+        except OSError:
+            # The process ended between listing and reading.
+            continue
+        if ACTION_SERVER_MODULE in command:
+            return True
+    return False
+
+
 def world_is_ready():
-    """Whether the action server has published a world context yet."""
-    return (_run_dir() / WORLD_CONTEXT_FILE_NAME).is_file()
+    """Whether a running action server has published a world context.
+
+    The context file alone is not enough: it outlives the process that wrote
+    it, so a server that died would still look like a running world and every
+    plan sent to it would wait forever.
+    """
+    if not (_run_dir() / WORLD_CONTEXT_FILE_NAME).is_file():
+        return False
+    return _action_server_is_alive()
 
 
 def _load_world_context():
