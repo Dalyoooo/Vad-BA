@@ -28,7 +28,7 @@ import traceback
 from pathlib import Path
 
 import ipywidgets as widgets
-from IPython.display import display
+from IPython.display import Javascript, display
 
 # The demo code lives in the cloned repository, same lookup as demo_ui.py.
 DEMO_MODULE_SEARCH_PATHS = (
@@ -465,6 +465,204 @@ def _counts_line(triage):
 
 # %% the UI itself
 
+AUTO_RECORDER_CONTAINER_ID = "vad-auto-recorder"
+"""Element the browser-side recorder attaches its controls to."""
+
+AUTO_RECORDING_NAME = ".scene-recording.webm"
+"""File the browser writes a finished recording to."""
+
+AUTO_RECORDING_POLL_S = 0.5
+"""Seconds between looks for that file."""
+
+AUTO_RECORDING_CALIBRATION_MS = 500
+"""How long the room is measured before speech is judged against it."""
+
+AUTO_RECORDING_NOISE_MULTIPLE = 3.0
+"""How far above the measured room noise a signal counts as speech."""
+
+AUTO_RECORDING_MIN_THRESHOLD = 0.012
+"""Floor under the threshold, so a silent room does not make it trigger-happy."""
+
+AUTO_RECORDING_SILENCE_HOLD_MS = 1500
+"""Quiet time after speech that ends the recording."""
+
+AUTO_RECORDING_MAX_MS = 40000
+"""Hard limit, so a stuck microphone cannot record forever."""
+
+
+def _auto_recording_path():
+    """Where the finished recording lands, next to this module."""
+    return Path(__file__).resolve().parent / AUTO_RECORDING_NAME
+
+
+def _auto_recording_api_path():
+    """The same file, named the way the notebook server addresses it."""
+    return f"{Path(__file__).resolve().parent.name}/{AUTO_RECORDING_NAME}"
+
+
+def _auto_recorder_script():
+    """Browser-side recorder that ends itself once the talking stops.
+
+    The widget recorder hands over its audio only after a click on stop, so
+    nothing here can watch the sound while it is being made. This runs where the
+    sound is: it measures the room for a moment, treats anything well above that
+    as speech, and stops once it has heard speech followed by a stretch of quiet.
+    The finished recording goes back through the notebook server's file
+    interface, which the waiting side of this module picks up.
+    """
+    return f"""
+(function () {{
+  var container = document.getElementById("{AUTO_RECORDER_CONTAINER_ID}");
+  if (!container || container.dataset.wired) return;
+  container.dataset.wired = "1";
+
+  var button = document.createElement("button");
+  button.textContent = "Record (stops on silence)";
+  button.style.cssText = "padding:4px 10px;margin-right:8px;cursor:pointer;";
+  var status = document.createElement("span");
+  status.style.cssText = "font-style:italic;";
+  container.appendChild(button);
+  container.appendChild(status);
+
+  var baseUrl = (document.body.dataset.baseUrl) || "/";
+
+  function xsrfToken() {{
+    var match = document.cookie.match(/\\b_xsrf=([^;]+)/);
+    return match ? decodeURIComponent(match[1]) : "";
+  }}
+
+  function upload(blob) {{
+    return new Promise(function (resolve, reject) {{
+      var reader = new FileReader();
+      reader.onloadend = function () {{
+        fetch(baseUrl + "api/contents/{_auto_recording_api_path()}", {{
+          method: "PUT",
+          headers: {{
+            "Content-Type": "application/json",
+            "X-XSRFToken": xsrfToken()
+          }},
+          body: JSON.stringify({{
+            type: "file",
+            format: "base64",
+            content: String(reader.result).split(",")[1]
+          }})
+        }}).then(resolve, reject);
+      }};
+      reader.readAsDataURL(blob);
+    }});
+  }}
+
+  button.onclick = function () {{
+    button.disabled = true;
+    navigator.mediaDevices.getUserMedia({{audio: true}}).then(function (stream) {{
+      var recorder = new MediaRecorder(stream);
+      var chunks = [];
+      var audioContext = new (window.AudioContext || window.webkitAudioContext)();
+      var analyser = audioContext.createAnalyser();
+      analyser.fftSize = 1024;
+      audioContext.createMediaStreamSource(stream).connect(analyser);
+      var samples = new Float32Array(analyser.fftSize);
+
+      recorder.ondataavailable = function (event) {{ chunks.push(event.data); }};
+      recorder.onstop = function () {{
+        stream.getTracks().forEach(function (track) {{ track.stop(); }});
+        audioContext.close();
+        status.textContent = "sending ...";
+        upload(new Blob(chunks, {{type: recorder.mimeType}})).then(function () {{
+          status.textContent = "sent; the pipeline takes over.";
+          button.disabled = false;
+        }}, function (error) {{
+          status.textContent = "could not send: " + error;
+          button.disabled = false;
+        }});
+      }};
+
+      var roomNoise = [];
+      var threshold = null;
+      var heardSpeech = false;
+      var quietSince = null;
+      var startedAt = performance.now();
+
+      recorder.start();
+      status.textContent = "measuring the room ...";
+
+      var timer = setInterval(function () {{
+        analyser.getFloatTimeDomainData(samples);
+        var total = 0;
+        for (var i = 0; i < samples.length; i++) total += samples[i] * samples[i];
+        var level = Math.sqrt(total / samples.length);
+        var now = performance.now();
+
+        if (now - startedAt < {AUTO_RECORDING_CALIBRATION_MS}) {{
+          roomNoise.push(level);
+          return;
+        }}
+        if (threshold === null) {{
+          roomNoise.sort(function (a, b) {{ return a - b; }});
+          var middle = roomNoise[Math.floor(roomNoise.length / 2)] || 0;
+          threshold = Math.max(middle * {AUTO_RECORDING_NOISE_MULTIPLE},
+                               {AUTO_RECORDING_MIN_THRESHOLD});
+          status.textContent = "listening ...";
+        }}
+
+        if (level > threshold) {{
+          heardSpeech = true;
+          quietSince = null;
+          status.textContent = "speech ...";
+        }} else if (heardSpeech) {{
+          if (quietSince === null) {{
+            quietSince = now;
+            status.textContent = "quiet ...";
+          }} else if (now - quietSince > {AUTO_RECORDING_SILENCE_HOLD_MS}) {{
+            clearInterval(timer);
+            recorder.stop();
+            return;
+          }}
+        }}
+
+        if (now - startedAt > {AUTO_RECORDING_MAX_MS}) {{
+          clearInterval(timer);
+          recorder.stop();
+        }}
+      }}, 50);
+    }}, function (error) {{
+      status.textContent = "no microphone: " + error;
+      button.disabled = false;
+    }});
+  }};
+}})();
+"""
+
+
+def _watch_for_auto_recording(on_audio):
+    """Hand over recordings the browser drops off, once they are complete.
+
+    The file is only read after its size has stopped changing, so a recording
+    still being written is never passed on half finished.
+    """
+    path = _auto_recording_path()
+    path.unlink(missing_ok=True)
+
+    def work():
+        while True:
+            time.sleep(AUTO_RECORDING_POLL_S)
+            try:
+                if not path.is_file():
+                    continue
+                size = path.stat().st_size
+                time.sleep(AUTO_RECORDING_POLL_S)
+                if not path.is_file() or path.stat().st_size != size:
+                    continue
+                audio = path.read_bytes()
+                path.unlink(missing_ok=True)
+            except OSError:
+                continue
+            if audio:
+                on_audio(audio)
+
+    threading.Thread(target=work, daemon=True).start()
+
+
 def _build_recorder():
     """Microphone widget, or None when it cannot be created.
 
@@ -598,6 +796,9 @@ def run_vad_ui():
         else "Upload a recorded scene to begin (ipywebrtc missing, so no "
              "in-browser recording)."
     )
+    auto_recorder = widgets.HTML(
+        f"<div id='{AUTO_RECORDER_CONTAINER_ID}'></div>"
+    )
     models_status = widgets.HTML("")
     waveform_area = widgets.HTML("")
     table_area = widgets.HTML("")
@@ -622,11 +823,10 @@ def run_vad_ui():
     def clear_report():
         plan_area.outputs = ()
 
-    def _accept_audio(audio_bytes, source):
+    def _accept_audio(audio_bytes, source, next_step="Click 'Understand scene'."):
         session["audio"] = audio_bytes
         understand_button.disabled = False
-        log(f"{source} received ({len(audio_bytes) / 1024:.0f} kB). "
-            "Click 'Understand scene'.")
+        log(f"{source} received ({len(audio_bytes) / 1024:.0f} kB). {next_step}")
 
     def _on_upload(_change):
         if upload.value:
@@ -639,94 +839,112 @@ def run_vad_ui():
         if change["new"]:
             _accept_audio(bytes(change["new"]), "Recording")
 
+    def _understand_work():
+        """Run the speech front-end. True when an instruction came out of it."""
+        understood = False
+        try:
+            # Drawn before the models load, so the segmentation is visible
+            # while the slow part is still running.
+            log("Detecting speech regions ...")
+            waveform_area.value = _waveform_html(session["audio"])
+
+            log("Loading models (first run takes a while) ...")
+            _ensure_whisper()
+            _ensure_planner()
+            from thesis_demo.dialogue.interpreter import planner_backend
+            from thesis_demo.dialogue.scene import understand_scene
+
+            log("Reading world context ...")
+            session["context"] = _load_world_context()
+
+            log("Listening to the scene ...")
+            utterances, triage = understand_scene(
+                session["audio"],
+                session["context"],
+                planner_backend(),
+                diarizer=_ensure_diarizer(),
+            )
+            session["triage"] = triage
+
+            table_area.value = _utterance_table(utterances, triage)
+            if triage.outcome is Outcome.OK:
+                counts = _counts_line(triage)
+                instruction_area.value = (
+                    f"<p>{counts}</p>" if counts else ""
+                ) + (
+                    "<p><b>Instruction to planner:</b> "
+                    f"<code>{triage.instruction}</code></p>"
+                )
+                execute_button.disabled = False
+                understood = True
+                log("Scene understood.")
+            elif triage.outcome is Outcome.NO_COMMAND:
+                instruction_area.value = (
+                    "<p><b>No command for the robot</b> &mdash; nothing to do.</p>"
+                )
+                log("Scene contained no command.")
+            else:
+                instruction_area.value = (
+                    f"<p><b>Interpretation failed:</b> {triage.rejection_reason}</p>"
+                )
+                log("Interpretation failed.")
+        except Exception:
+            log("Error &mdash; see below.")
+            report(traceback.format_exc())
+        finally:
+            understand_button.disabled = False
+        return understood
+
+    def _execute_work():
+        """Plan from the instruction and hand the plan to the world."""
+        try:
+            from thesis_demo.planner.llm import InferenceConfiguration
+            from thesis_demo.planner.llm import plan as run_planner
+
+            log("Planning ...")
+            result = run_planner(
+                session["triage"].instruction,
+                context=session["context"],
+                inference=InferenceConfiguration(
+                    max_attempts=PLANNER_MAX_ATTEMPTS
+                ),
+            )
+            clear_report()
+            report(json.dumps(result.payload, indent=2))
+            if result.outcome == "plan":
+                outcome = _send_plan_for_execution(result.payload, log)
+                log(f"Execution finished: {outcome.get('status', 'unknown')}")
+            elif result.outcome == "clarification":
+                log(f"Planner asks: {result.payload}")
+            else:
+                log(f"Planner failed: {result.payload}")
+        except Exception:
+            log("Error &mdash; see below.")
+            report(traceback.format_exc())
+        finally:
+            execute_button.disabled = False
+
     def _understand(_button):
+        understand_button.disabled = True
+        execute_button.disabled = True
+        threading.Thread(target=_understand_work, daemon=True).start()
+
+    def _execute(_button):
+        execute_button.disabled = True
+        threading.Thread(target=_execute_work, daemon=True).start()
+
+    def _run_whole_chain():
+        """Understand the clip and, if it carried a command, plan and execute.
+
+        The stages already report their own progress, so chaining them only
+        removes the two clicks between them.
+        """
         understand_button.disabled = True
         execute_button.disabled = True
 
         def work():
-            try:
-                # Drawn before the models load, so the segmentation is visible
-                # while the slow part is still running.
-                log("Detecting speech regions ...")
-                waveform_area.value = _waveform_html(session["audio"])
-
-                log("Loading models (first run takes a while) ...")
-                _ensure_whisper()
-                _ensure_planner()
-                from thesis_demo.dialogue.interpreter import planner_backend
-                from thesis_demo.dialogue.scene import understand_scene
-
-                log("Reading world context ...")
-                session["context"] = _load_world_context()
-
-                log("Listening to the scene ...")
-                utterances, triage = understand_scene(
-                    session["audio"],
-                    session["context"],
-                    planner_backend(),
-                    diarizer=_ensure_diarizer(),
-                )
-                session["triage"] = triage
-
-                table_area.value = _utterance_table(utterances, triage)
-                if triage.outcome is Outcome.OK:
-                    counts = _counts_line(triage)
-                    instruction_area.value = (
-                        f"<p>{counts}</p>" if counts else ""
-                    ) + (
-                        "<p><b>Instruction to planner:</b> "
-                        f"<code>{triage.instruction}</code></p>"
-                    )
-                    execute_button.disabled = False
-                    log("Scene understood. Review the table, then execute.")
-                elif triage.outcome is Outcome.NO_COMMAND:
-                    instruction_area.value = (
-                        "<p><b>No command for the robot</b> &mdash; nothing to do.</p>"
-                    )
-                    log("Scene contained no command.")
-                else:
-                    instruction_area.value = (
-                        f"<p><b>Interpretation failed:</b> {triage.rejection_reason}</p>"
-                    )
-                    log("Interpretation failed.")
-            except Exception:
-                log("Error &mdash; see below.")
-                report(traceback.format_exc())
-            finally:
-                understand_button.disabled = False
-
-        threading.Thread(target=work, daemon=True).start()
-
-    def _execute(_button):
-        execute_button.disabled = True
-
-        def work():
-            try:
-                from thesis_demo.planner.llm import InferenceConfiguration
-                from thesis_demo.planner.llm import plan as run_planner
-
-                log("Planning ...")
-                result = run_planner(
-                    session["triage"].instruction,
-                    context=session["context"],
-                    inference=InferenceConfiguration(
-                        max_attempts=PLANNER_MAX_ATTEMPTS
-                    ),
-                )
-                clear_report()
-                report(json.dumps(result.payload, indent=2))
-                if result.outcome == "plan":
-                    outcome = _send_plan_for_execution(result.payload, log)
-                    log(f"Execution finished: {outcome.get('status', 'unknown')}")
-                elif result.outcome == "clarification":
-                    log(f"Planner asks: {result.payload}")
-                else:
-                    log(f"Planner failed: {result.payload}")
-            except Exception:
-                log("Error &mdash; see below.")
-                report(traceback.format_exc())
-            finally:
-                execute_button.disabled = False
+            if _understand_work():
+                _execute_work()
 
         threading.Thread(target=work, daemon=True).start()
 
@@ -750,6 +968,7 @@ def run_vad_ui():
                 environment_choice,
                 widgets.HBox([world_button, stop_world_button]),
                 widgets.HBox(controls),
+                auto_recorder,
                 status,
                 models_status,
                 waveform_area,
@@ -762,3 +981,11 @@ def run_vad_ui():
 
     # After display, so the first report has somewhere to appear.
     _preload_models(models_status)
+
+    def _on_auto_recording(audio_bytes):
+        _accept_audio(audio_bytes, "Recording", "Running the whole chain ...")
+        _run_whole_chain()
+
+    _watch_for_auto_recording(_on_auto_recording)
+    # The container exists only once the widgets are on the page.
+    display(Javascript(_auto_recorder_script()))
