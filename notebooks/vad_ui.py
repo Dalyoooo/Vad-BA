@@ -62,8 +62,14 @@ EXECUTE_PLAN_ACTION = "execute_plan"
 ACTION_SERVER_TIMEOUT_S = 5.0
 """How long to wait for that action server before giving up."""
 
-WORLD_STARTUP_CHECKS = 60
-"""How many times to look for the world context after starting the world."""
+WORLD_STARTUP_CHECKS = 180
+"""How many times to look for the world context after starting the world.
+
+Generous on purpose: a first start parses the environment and the robot with
+cold caches and can take several minutes, and waiting is only ever cut short
+here, never in the case that matters, because a server that dies is noticed
+right away.
+"""
 
 WORLD_CHECK_INTERVAL_S = 2.0
 """Seconds between those checks."""
@@ -384,14 +390,17 @@ def _wire_world_button(button, log):
                     log("World already running.")
                     return
                 log("Starting the world, this takes a moment ...")
-                _, log_file = start_world()
+                process, log_file = start_world()
                 for _ in range(WORLD_STARTUP_CHECKS):
                     if world_is_ready():
                         log("World ready.")
                         return
+                    if process.poll() is not None:
+                        # The server gave up; its log says why, so stop waiting.
+                        break
                     time.sleep(WORLD_CHECK_INTERVAL_S)
                 log(
-                    "World did not report ready in time. Last lines of "
+                    "World did not come up. Last lines of "
                     f"{log_file}:<br><pre>{log_file.read_text()[-800:]}</pre>"
                 )
             except Exception:
