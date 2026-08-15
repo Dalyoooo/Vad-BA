@@ -19,6 +19,7 @@ import base64
 import io
 import json
 import os
+import signal
 import subprocess
 import sys
 import threading
@@ -160,17 +161,36 @@ def _demo_search_path():
     return os.pathsep.join(str(p) for p in DEMO_MODULE_SEARCH_PATHS if p.is_dir())
 
 
-def start_world():
+ROBOT_CHOICES = ("hsrb", "pr2", "tiago")
+"""Robots the world builder can attach.
+
+Fewer than the original demo offers, because each one needs a drive and a
+description the speech pipeline's world builder knows about.
+"""
+
+ENVIRONMENT_CHOICES = ("apartment", "kitchen")
+"""Environments the world builder can furnish and annotate."""
+
+WORLD_SELECTION_VARIABLE = "NLP_WORLD_SELECTION"
+"""Environment variable the action server reads its selection from."""
+
+
+def start_world(robot=ROBOT_CHOICES[0], environment_name=ENVIRONMENT_CHOICES[0]):
     """Launch the action server that builds the world and publishes its context.
 
     It runs as its own process, which does not inherit the search path this
-    module added to ``sys.path``, so PYTHONPATH is passed explicitly.
+    module added to ``sys.path``, so PYTHONPATH is passed explicitly. The robot
+    and environment travel the same way, because the server picks them up from
+    its environment when it builds the world.
     """
     environment = dict(os.environ)
     existing = environment.get("PYTHONPATH", "")
     search_path = _demo_search_path()
     environment["PYTHONPATH"] = (
         f"{search_path}{os.pathsep}{existing}" if existing else search_path
+    )
+    environment[WORLD_SELECTION_VARIABLE] = json.dumps(
+        {"robot": robot, "environment": environment_name}
     )
     _run_dir().mkdir(parents=True, exist_ok=True)
     log_file = _run_dir() / "action_server.log"
@@ -186,12 +206,13 @@ def start_world():
 ACTION_SERVER_MODULE = "thesis_demo.action_server"
 
 
-def _action_server_is_alive():
-    """Whether an action server process is currently running.
+def _action_server_pids():
+    """Process ids of the running action servers.
 
-    Scans the process table rather than tracking a handle, so a world started
-    from an earlier kernel or from a terminal is recognised as well.
+    Reads the process table rather than tracking a handle, so a world started
+    from an earlier kernel or from a terminal is found as well.
     """
+    pids = []
     for entry in Path("/proc").iterdir():
         if not entry.name.isdigit():
             continue
@@ -201,8 +222,38 @@ def _action_server_is_alive():
             # The process ended between listing and reading.
             continue
         if ACTION_SERVER_MODULE in command:
-            return True
-    return False
+            pids.append(int(entry.name))
+    return pids
+
+
+def _action_server_is_alive():
+    return bool(_action_server_pids())
+
+
+WORLD_SHUTDOWN_CHECKS = 20
+"""How many times to look for the world to be gone after asking it to stop."""
+
+
+def stop_world():
+    """End the running world and remove the context it published.
+
+    The context file is what the rest of the interface reads the world from, so
+    leaving it behind would describe a world that no longer exists.
+    """
+    for pid in _action_server_pids():
+        try:
+            os.kill(pid, signal.SIGTERM)
+        except ProcessLookupError:
+            # Already gone.
+            pass
+
+    for _ in range(WORLD_SHUTDOWN_CHECKS):
+        if not _action_server_is_alive():
+            break
+        time.sleep(WORLD_CHECK_INTERVAL_S)
+
+    (_run_dir() / WORLD_CONTEXT_FILE_NAME).unlink(missing_ok=True)
+    return not _action_server_is_alive()
 
 
 def world_is_ready():
@@ -379,21 +430,43 @@ def _build_recorder():
         return None
 
 
-def _wire_world_button(button, log):
-    """Start the world on click and report when its context appears."""
+def _wire_world_button(button, log, selectors, stop_button):
+    """Start the world on click and report when its context appears.
+
+    While a world stands, the selectors are locked, so what they show is always
+    what is actually running.
+    """
+    robot_choice, environment_choice = selectors
+
+    def set_locked(locked):
+        robot_choice.disabled = locked
+        environment_choice.disabled = locked
+        stop_button.disabled = not locked
+
     def clicked(_button):
         button.disabled = True
 
         def work():
             try:
                 if world_is_ready():
-                    log("World already running.")
+                    log("World already running. Stop it to pick another one.")
+                    set_locked(True)
                     return
-                log("Starting the world, this takes a moment ...")
-                process, log_file = start_world()
+                log(
+                    f"Starting {robot_choice.value} in the "
+                    f"{environment_choice.value}, this takes a moment ..."
+                )
+                process, log_file = start_world(
+                    robot=robot_choice.value,
+                    environment_name=environment_choice.value,
+                )
                 for _ in range(WORLD_STARTUP_CHECKS):
                     if world_is_ready():
-                        log("World ready.")
+                        log(
+                            f"World ready: {robot_choice.value} in the "
+                            f"{environment_choice.value}."
+                        )
+                        set_locked(True)
                         return
                     if process.poll() is not None:
                         # The server gave up; its log says why, so stop waiting.
@@ -411,7 +484,28 @@ def _wire_world_button(button, log):
 
         threading.Thread(target=work, daemon=True).start()
 
+    def stop_clicked(_button):
+        stop_button.disabled = True
+
+        def work():
+            try:
+                log("Stopping the world ...")
+                if stop_world():
+                    log("World stopped. Pick a robot and an environment.")
+                    set_locked(False)
+                else:
+                    log("World did not stop; it is still running.")
+                    set_locked(True)
+            except Exception:
+                log("Error stopping the world &mdash; see below.")
+                raise
+
+        threading.Thread(target=work, daemon=True).start()
+
     button.on_click(clicked)
+    stop_button.on_click(stop_clicked)
+    # A world from an earlier kernel is already standing; match the controls.
+    set_locked(world_is_ready())
 
 
 def run_vad_ui():
@@ -422,8 +516,21 @@ def run_vad_ui():
         multiple=False,
         description="Audio clip",
     )
+    robot_choice = widgets.ToggleButtons(
+        options=ROBOT_CHOICES,
+        value=ROBOT_CHOICES[0],
+        description="Robot",
+    )
+    environment_choice = widgets.ToggleButtons(
+        options=ENVIRONMENT_CHOICES,
+        value=ENVIRONMENT_CHOICES[0],
+        description="Environment",
+    )
     world_button = widgets.Button(
         description="Start world", button_style="info"
+    )
+    stop_world_button = widgets.Button(
+        description="Stop world", button_style="warning", disabled=True
     )
     understand_button = widgets.Button(
         description="Understand scene", button_style="primary", disabled=True
@@ -568,12 +675,14 @@ def run_vad_ui():
 
         threading.Thread(target=work, daemon=True).start()
 
-    _wire_world_button(world_button, log)
+    _wire_world_button(
+        world_button, log, (robot_choice, environment_choice), stop_world_button
+    )
     upload.observe(_on_upload, names="value")
     understand_button.on_click(_understand)
     execute_button.on_click(_execute)
 
-    controls = [world_button, upload, understand_button, execute_button]
+    controls = [upload, understand_button, execute_button]
     if recorder is not None:
         recorder.audio.observe(_on_recording, names="value")
         controls.insert(0, recorder)
@@ -582,6 +691,9 @@ def run_vad_ui():
         widgets.VBox(
             [
                 header,
+                robot_choice,
+                environment_choice,
+                widgets.HBox([world_button, stop_world_button]),
                 widgets.HBox(controls),
                 status,
                 waveform_area,
