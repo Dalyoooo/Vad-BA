@@ -25,6 +25,7 @@ import sys
 import threading
 import time
 import traceback
+from html import escape
 from pathlib import Path
 
 import ipywidgets as widgets
@@ -111,6 +112,12 @@ ROLE_BACKGROUNDS = {
     UtteranceRole.IGNORED: "#f4cccc",
 }
 """Row colour per role in the utterance table."""
+
+UNJUDGED_BACKGROUND = "#e8e8e8"
+"""Row colour when the scene was never judged, so no role applies."""
+
+UNJUDGED_LABEL = "&mdash;"
+"""Shown in place of a role for those rows."""
 
 _state = {"whisper": False, "planner": False, "diarizer": None}
 
@@ -367,20 +374,18 @@ def _utterance_table(utterances, triage):
     rows = []
     interpretation = triage.interpretation
     for index, utterance in enumerate(utterances):
-        role = (
-            interpretation.role_of(index)
-            if interpretation is not None
-            else UtteranceRole.IGNORED
-        )
+        # Without an interpretation nothing was judged at all. Painting every
+        # row as noise would claim a decision the model never made.
+        role = interpretation.role_of(index) if interpretation is not None else None
         speaker = "?" if utterance.speaker_id is None else str(utterance.speaker_id)
         rows.append(
-            f"<tr style='background:{ROLE_BACKGROUNDS[role]}'>"
+            f"<tr style='background:{ROLE_BACKGROUNDS.get(role, UNJUDGED_BACKGROUND)}'>"
             f"<td>{index}</td>"
             f"<td>{utterance.start_s:.2f}&ndash;{utterance.end_s:.2f}s</td>"
             f"<td>{speaker}</td>"
-            f"<td>{utterance.text}</td>"
-            f"<td>{role.value}</td>"
-            f"<td>{interpretation.effect_of(index) if interpretation else ''}</td>"
+            f"<td>{escape(utterance.text)}</td>"
+            f"<td>{role.value if role is not None else UNJUDGED_LABEL}</td>"
+            f"<td>{escape(interpretation.effect_of(index)) if interpretation else ''}</td>"
             "</tr>"
         )
     return (
@@ -930,10 +935,16 @@ def run_vad_ui():
                 )
                 log("Scene contained no command.")
             else:
+                # Both the reason and the answer are the model's own words and
+                # carry angle brackets, which vanish when shown as markup.
                 instruction_area.value = (
-                    f"<p><b>Interpretation failed:</b> {triage.rejection_reason}</p>"
+                    "<p><b>Interpretation failed:</b> "
+                    f"{escape(str(triage.rejection_reason))}</p>"
+                    "<p>The model answered:</p>"
+                    f"<pre style='white-space:pre-wrap'>"
+                    f"{escape(triage.raw_response)}</pre>"
                 )
-                log("Interpretation failed.")
+                log("Interpretation failed &mdash; see the answer below.")
         except Exception:
             log("Error &mdash; see below.")
             report(traceback.format_exc())
@@ -974,9 +985,9 @@ def run_vad_ui():
                     log(f"Execution finished: {status}"
                         + (f" &mdash; {detail}" if detail else ""))
             elif result.outcome == "clarification":
-                log(f"Planner asks: {result.payload}")
+                log(f"Planner asks: {escape(str(result.payload))}")
             else:
-                log(f"Planner failed: {result.payload}")
+                log(f"Planner failed: {escape(str(result.payload))}")
         except Exception:
             log("Error &mdash; see below.")
             report(traceback.format_exc())
