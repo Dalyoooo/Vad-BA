@@ -25,7 +25,7 @@
        "type": "tab-area",
        "currentIndex": 0,
        "widgets": [
-        "notebook:notebooks/vad_demo.ipynb"
+        "notebook:notebooks/demo.ipynb"
        ]
       },
       {
@@ -37,7 +37,7 @@
       }
      ]
     },
-    "current": "notebook:notebooks/vad_demo.ipynb"
+    "current": "notebook:notebooks/demo.ipynb"
    },
    "down": {
     "size": 0,
@@ -129,7 +129,7 @@
      "root": "/home/repo"
     },
     {
-     "path": "notebooks/vad_demo.ipynb",
+     "path": "notebooks/demo.ipynb",
      "contentType": "notebook",
      "factory": "Notebook",
      "root": "/home/repo"
@@ -137,9 +137,9 @@
    ],
    "closed": []
   },
-  "notebook:notebooks/vad_demo.ipynb": {
+  "notebook:notebooks/demo.ipynb": {
    "data": {
-    "path": "notebooks/vad_demo.ipynb",
+    "path": "notebooks/demo.ipynb",
     "factory": "Notebook"
    }
   }
