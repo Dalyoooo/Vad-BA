@@ -43,7 +43,7 @@ ENV PYTHONPATH=${CRAM_REPOSITORY}/pycram/demos
 # Pinning the commit fixes what this image contains and makes the clone layer
 # rebuild whenever the demo code moves; a plain branch clone would be served
 # from the build cache and keep shipping the previous state.
-ARG CRAM_REVISION=626b9232a9758c1c46ad9abcf7e1dbd75954ab9c
+ARG CRAM_REVISION=536575b83211bafa18801ec267d88df91a6d07d5
 
 RUN python3 -m pip install poetry
 RUN set -ex && \

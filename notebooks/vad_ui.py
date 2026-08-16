@@ -370,6 +370,44 @@ def _send_plan_for_execution(plan_payload, log):
 
 # %% rendering
 
+def _voice_distance_table(diarizer):
+    """Show how far apart the voices measured, against the cut that was applied.
+
+    The cut between one voice and the next is a single number, and the right
+    one depends on the microphone, the room and how alike the speakers are. A
+    verdict alone gives nothing to correct; the distances show whether a split
+    was clear or a near miss.
+    """
+    distances = getattr(diarizer, "last_distances", None)
+    judged = getattr(diarizer, "last_judged", [])
+    if distances is None or len(judged) < 2:
+        return ""
+
+    threshold = getattr(diarizer, "threshold", None)
+    backend = getattr(diarizer, "backend_name", "?")
+    header = "".join(f"<th>{index}</th>" for index in judged)
+    rows = []
+    for row, row_index in enumerate(judged):
+        cells = []
+        for column in range(len(judged)):
+            if row == column:
+                cells.append("<td style='color:#999'>&middot;</td>")
+                continue
+            value = float(distances[row][column])
+            same = threshold is not None and value < threshold
+            colour = "#c6e0b4" if same else "#f4cccc"
+            cells.append(f"<td style='background:{colour}'>{value:.2f}</td>")
+        rows.append(f"<tr><th>{row_index}</th>{''.join(cells)}</tr>")
+
+    return (
+        "<p style='font-size:12px'><b>Voice distances</b> "
+        f"({escape(str(backend))}, same voice below {threshold:.2f}). "
+        "Green: judged one voice. Red: judged different voices.</p>"
+        "<table style='border-collapse:collapse;font-size:12px'>"
+        f"<tr><th></th>{header}</tr>" + "".join(rows) + "</table>"
+    )
+
+
 def _utterance_table(utterances, triage):
     rows = []
     interpretation = triage.interpretation
@@ -917,7 +955,10 @@ def run_vad_ui():
             )
             session["triage"] = triage
 
-            table_area.value = _utterance_table(utterances, triage)
+            table_area.value = (
+                _utterance_table(utterances, triage)
+                + _voice_distance_table(_ensure_diarizer())
+            )
             if triage.outcome is Outcome.OK:
                 counts = _counts_line(triage)
                 instruction_area.value = (
