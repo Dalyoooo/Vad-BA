@@ -922,11 +922,17 @@ def run_vad_ui():
             # ipywidgets 7 hands back a dict, 8 a tuple of file objects.
             content = next(iter(upload.value.values()))["content"] \
                 if isinstance(upload.value, dict) else upload.value[0].content
-            _accept_audio(bytes(content), "Upload")
+            _accept_audio(bytes(content), "Upload", "Running the whole chain ...")
+            _run_whole_chain()
 
     def _on_recording(change):
+        # However a scene arrives, it takes the same route from here, so which
+        # control was used makes no difference to what happens next.
         if change["new"]:
-            _accept_audio(bytes(change["new"]), "Recording")
+            _accept_audio(
+                bytes(change["new"]), "Recording", "Running the whole chain ..."
+            )
+            _run_whole_chain()
 
     def _understand_work():
         """Run the speech front-end. True when an instruction came out of it."""
@@ -995,6 +1001,14 @@ def run_vad_ui():
 
     def _execute_work():
         """Plan from the instruction and hand the plan to the world."""
+        triage = session["triage"]
+        if triage is None or not getattr(triage, "instruction", None):
+            # A scene that yielded no instruction leaves nothing to plan from,
+            # and reaching past that would hand the planner what the check just
+            # refused.
+            log("No instruction to plan from &mdash; understand a scene first.")
+            execute_button.disabled = True
+            return
         try:
             from thesis_demo.planner.llm import InferenceConfiguration
             from thesis_demo.planner.llm import plan as run_planner
@@ -1033,7 +1047,7 @@ def run_vad_ui():
             log("Error &mdash; see below.")
             report(traceback.format_exc())
         finally:
-            execute_button.disabled = False
+            execute_button.disabled = session["triage"] is None
 
     def _understand(_button):
         understand_button.disabled = True
