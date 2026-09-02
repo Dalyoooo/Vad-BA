@@ -29,7 +29,7 @@ from html import escape
 from pathlib import Path
 
 import ipywidgets as widgets
-from IPython.display import Javascript, display
+from IPython.display import HTML, Javascript, display
 
 # The demo code lives in the cloned repository, same lookup as demo_ui.py.
 DEMO_MODULE_SEARCH_PATHS = (
@@ -106,18 +106,11 @@ SEGMENT_COLOR = "#1f4e79"
 SEGMENT_ALPHA = 0.22
 """Opacity of that marking, so the waveform stays visible through it."""
 
-ROLE_BACKGROUNDS = {
-    UtteranceRole.COMMAND: "#c6e0b4",
-    UtteranceRole.CONTEXT: "#ffe699",
-    UtteranceRole.IGNORED: "#f4cccc",
-}
-"""Row colour per role in the utterance table."""
-
-UNJUDGED_BACKGROUND = "#e8e8e8"
-"""Row colour when the scene was never judged, so no role applies."""
-
 UNJUDGED_LABEL = "&mdash;"
 """Shown in place of a role for those rows."""
+
+RESULTS_STYLESHEET = "assets/vad-results.css"
+"""Stylesheet used by the speech result tables."""
 
 _state = {"whisper": False, "planner": False, "diarizer": None}
 
@@ -370,6 +363,23 @@ def _send_plan_for_execution(plan_payload, log):
 
 # %% rendering
 
+def _results_stylesheet():
+    """Return the stylesheet used by the speech result tables."""
+    stylesheet_path = Path(__file__).resolve().parent / RESULTS_STYLESHEET
+    return f"<style>{stylesheet_path.read_text(encoding='utf-8')}</style>"
+
+def _role_badge(role):
+    """Return the compact visual label for an utterance role."""
+    if role is None:
+        return (
+            f"<span class='vad-role-badge vad-role-unknown'>{UNJUDGED_LABEL}</span>"
+        )
+    role_name = escape(role.value)
+    return (
+        f"<span class='vad-role-badge vad-role-{role_name}'>"
+        f"{role_name}</span>"
+    )
+
 def _voice_distance_table(diarizer):
     """Show how far apart the voices measured, against the cut that was applied.
 
@@ -378,33 +388,57 @@ def _voice_distance_table(diarizer):
     verdict alone gives nothing to correct; the distances show whether a split
     was clear or a near miss.
     """
-    distances = getattr(diarizer, "last_distances", None)
-    judged = getattr(diarizer, "last_judged", [])
+    distances = diarizer.last_distances
+    judged = diarizer.last_judged
     if distances is None or len(judged) < 2:
         return ""
 
-    threshold = getattr(diarizer, "threshold", None)
-    backend = getattr(diarizer, "backend_name", "?")
-    header = "".join(f"<th>{index}</th>" for index in judged)
+    threshold = diarizer.threshold
+    backend = diarizer.backend_name
+    header = "".join(
+        f"<th scope='col'>#{index}</th>" for index in judged
+    )
     rows = []
     for row, row_index in enumerate(judged):
         cells = []
         for column in range(len(judged)):
             if row == column:
-                cells.append("<td style='color:#999'>&middot;</td>")
+                cells.append(
+                    "<td class='vad-distance-diagonal' aria-label='same segment'>"
+                    "&middot;</td>"
+                )
+                continue
+            if column > row:
+                cells.append(
+                    "<td class='vad-distance-empty' aria-hidden='true'></td>"
+                )
                 continue
             value = float(distances[row][column])
             same = threshold is not None and value < threshold
-            colour = "#c6e0b4" if same else "#f4cccc"
-            cells.append(f"<td style='background:{colour}'>{value:.2f}</td>")
-        rows.append(f"<tr><th>{row_index}</th>{''.join(cells)}</tr>")
+            state = "same" if same else "different"
+            description = "within cutoff" if same else "above cutoff"
+            cells.append(
+                f"<td class='vad-distance-cell vad-distance-{state}' "
+                f"aria-label='segments {judged[column]} and {row_index}: "
+                f"{value:.2f}, {description}'>{value:.2f}</td>"
+            )
+        rows.append(
+            f"<tr><th scope='row'>#{row_index}</th>{''.join(cells)}</tr>"
+        )
 
     return (
-        "<p style='font-size:12px'><b>Voice distances</b> "
-        f"({escape(str(backend))}, same voice below {threshold:.2f}). "
-        "Green: judged one voice. Red: judged different voices.</p>"
-        "<table style='border-collapse:collapse;font-size:12px'>"
-        f"<tr><th></th>{header}</tr>" + "".join(rows) + "</table>"
+        "<section class='vad-results-card' aria-labelledby='vad-distance-title'>"
+        "<h4 class='vad-results-title' id='vad-distance-title'>Voice distances</h4>"
+        f"<p class='vad-results-meta'>{escape(str(backend))}; "
+        f"same voice below {threshold:.2f}. Each pair is shown once.</p>"
+        "<p class='vad-results-legend'>"
+        "<span class='vad-legend-chip vad-legend-same'>Within cutoff</span>"
+        "<span class='vad-legend-chip vad-legend-different'>Above cutoff</span>"
+        "</p>"
+        "<div class='vad-results-scroll'>"
+        "<table class='vad-distance-table'>"
+        f"<thead><tr><th scope='col'></th>{header}</tr></thead>"
+        f"<tbody>{''.join(rows)}</tbody></table></div></section>"
     )
 
 
@@ -416,20 +450,31 @@ def _utterance_table(utterances, triage):
         # row as noise would claim a decision the model never made.
         role = interpretation.role_of(index) if interpretation is not None else None
         speaker = "?" if utterance.speaker_id is None else str(utterance.speaker_id)
+        effect = escape(interpretation.effect_of(index)) if interpretation else ""
         rows.append(
-            f"<tr style='background:{ROLE_BACKGROUNDS.get(role, UNJUDGED_BACKGROUND)}'>"
-            f"<td>{index}</td>"
-            f"<td>{utterance.start_s:.2f}&ndash;{utterance.end_s:.2f}s</td>"
-            f"<td>{speaker}</td>"
-            f"<td>{escape(utterance.text)}</td>"
-            f"<td>{role.value if role is not None else UNJUDGED_LABEL}</td>"
-            f"<td>{escape(interpretation.effect_of(index)) if interpretation else ''}</td>"
+            "<tr>"
+            f"<td class='vad-index'>{index}</td>"
+            f"<td class='vad-time'>{utterance.start_s:.2f}"
+            f"&ndash;{utterance.end_s:.2f}s</td>"
+            f"<td class='vad-voice'>{escape(speaker)}</td>"
+            f"<td class='vad-heard'>{escape(utterance.text)}</td>"
+            f"<td class='vad-role'>{_role_badge(role)}</td>"
+            f"<td class='vad-effect'>{effect}</td>"
             "</tr>"
         )
     return (
-        "<table style='border-collapse:collapse;font-size:13px'>"
-        "<tr><th>#</th><th>time</th><th>voice</th><th>heard</th>"
-        "<th>role</th><th>effect</th></tr>" + "".join(rows) + "</table>"
+        "<section class='vad-results-card' aria-labelledby='vad-utterance-title'>"
+        "<h4 class='vad-results-title' id='vad-utterance-title'>Heard phrases</h4>"
+        "<p class='vad-results-meta'>Each phrase is shown with its interpretation.</p>"
+        "<div class='vad-results-scroll'>"
+        "<table class='vad-utterance-table'>"
+        "<colgroup><col class='vad-index'><col class='vad-time'>"
+        "<col class='vad-voice'><col class='vad-heard'><col class='vad-role'>"
+        "<col class='vad-effect'></colgroup>"
+        "<thead><tr><th scope='col'>#</th><th scope='col'>Time</th>"
+        "<th scope='col'>Voice</th><th scope='col'>Heard</th>"
+        "<th scope='col'>Role</th><th scope='col'>Effect</th></tr></thead>"
+        f"<tbody>{''.join(rows)}</tbody></table></div></section>"
     )
 
 
@@ -845,6 +890,7 @@ def _wire_world_button(button, log, selectors, stop_button):
 
 
 def run_vad_ui():
+    display(HTML(_results_stylesheet()))
     header = widgets.HTML("<h3>Context-aware speech understanding</h3>")
     recorder = _build_recorder()
     upload = widgets.FileUpload(
