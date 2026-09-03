@@ -1022,11 +1022,11 @@ def run_vad_ui():
                 execute_button.disabled = False
                 understood = True
                 log("Scene understood.")
-            elif triage.outcome is Outcome.NO_COMMAND:
+            elif triage.outcome is Outcome.NO_INSTRUCTION:
                 instruction_area.value = (
-                    "<p><b>No command for the robot</b> &mdash; nothing to do.</p>"
+                    "<p><b>No instruction for the robot</b> &mdash; nothing to do.</p>"
                 )
-                log("Scene contained no command.")
+                log("Scene contained no instruction.")
             else:
                 # Both the reason and the answer are the model's own words and
                 # carry angle brackets, which vanish when shown as markup.

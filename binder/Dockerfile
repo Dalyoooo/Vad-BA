@@ -43,7 +43,14 @@ ENV PYTHONPATH=${CRAM_REPOSITORY}/pycram/demos
 # Pinning the commit fixes what this image contains and makes the clone layer
 # rebuild whenever the demo code moves; a plain branch clone would be served
 # from the build cache and keep shipping the previous state.
-ARG CRAM_REVISION=1291aa10f09ff6c066f3ddd94bae6975c66629f9
+ARG CRAM_REVISION=98f7c0b7d87105a67b7fb01a57b02559eed3e93d
+
+# The base image carries a half-removed mlflow-skinny: its metadata says the
+# package is installed while mlflow/__init__.py is gone. poetry resolves a newer
+# version and asks pip to uninstall the old one, which then dies on the missing
+# file and takes the whole build with it. Nothing here uses mlflow, so clearing
+# the leftovers is enough.
+RUN rm -rf /opt/conda/lib/python3.12/site-packages/mlflow*
 
 RUN python3 -m pip install poetry
 RUN set -ex && \
