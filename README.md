@@ -1,415 +1,308 @@
+# Context-aware voice activity detection for human-robot interaction
 
-# binder-template
+[![Binder](https://binder.intel4coro.de/badge_logo.svg)](https://binder.intel4coro.de/v2/gh/Dalyoooo/Vad-BA/binder-build?urlpath=lab%2Fworkspaces%2Fnew-workspace)
 
-[![Binder](https://binder.intel4coro.de/badge_logo.svg)](https://binder.intel4coro.de/v2/gh/IntEL4CoRo/binder-template.git/main?urlpath=lab/workspaces/new-workspace)
+Speak a household scene out loud. Several people may talk at once about
+different things. The robot decides, for every phrase it heard, whether that
+phrase is the **instruction**, **context** that changes what the instruction
+means, or **noise** to ignore — and then carries out what is left.
 
-## Introduction
+The point is the middle case. Classical voice activity detection keeps speech
+and drops silence; background speech is either let through as part of the
+command or discarded as noise. Neither is right when a second person says
+"there is already a fork on the table": that phrase is not the command, it is
+not noise either, and it changes how many forks the robot should fetch.
 
-This is a template repository for creating Virtual Research Labs(VRL) as part of the [EASE Virtual Research Building (VRB)](https://vrb.ease-crc.org/) project.
-
-This template provides a foundation for running robotics research Jupyter Notebooks on Binderhub, enabling researchers to share interactive experiments and demonstrations.
-
-### Launcher Options
-
-Click one of the following links to launch the lab:
-
-| Links | Description |
-|--------|-------------|
-| [**JupyterLab**](https://binder.intel4coro.de/v2/gh/IntEL4CoRo/binder-template.git/main?urlpath=lab/workspaces/new-workspace) | Full-featured IDE with notebook editor, terminal, and file browser | [Launch](https://binder.intel4coro.de/v2/gh/IntEL4CoRo/binder-template.git/main?urlpath=lab/workspaces/new-workspace) |
-| [**VSCode**](https://binder.intel4coro.de/v2/gh/IntEL4CoRo/binder-template.git/main?urlpath=vscode) | Browser-based code editor with full VSCode experience |
-
-### Launcher URL Parameters
-
-The launch URL consists of several parts:
+**Open the lab:** the badge above, or
 
 ```
-https://binder.intel4coro.de/v2/gh/{USER}/{REPO}/{BRANCH}?urlpath={INTERFACE}/{PATH}
+https://binder.intel4coro.de/v2/gh/Dalyoooo/Vad-BA/binder-build?urlpath=lab%2Fworkspaces%2Fnew-workspace
 ```
 
-- `{USER}` - GitHub username or organization
-- `{REPO}` - Repository name  
-- `{BRANCH}` - Branch name (usually `main`), tag or git commit hash (e.g., `27ba27a`)
-- `{INTERFACE}` - Interface type: `lab` (JupyterLab) or `vscode`
-- `{PATH}` - Path to your notebook file, only applicable when using JupyterLab (e.g., `urlpath=lab/tree/notebooks/mujoco.ipynb`), the `/tree` prefix is required. 
-   > Note: With the {PATH}, it only opens the specified file in JupyterLab after the lab starts, it does NOT execute the code automatically.
+The branch matters. `binder-build` carries this work; `main` is the untouched
+template. If the first launch ends in a timeout, open the link again — the
+image has to reach the compute node once, and the second attempt finds it
+there.
 
-### Quick Tips
+---
 
-- **JupyterLab** is recommended for notebook development and interactive computing
-- **VSCode** is better if you prefer a full-featured code editor with debugging
+## Try it in one minute
 
-## Create a new VRB lab from this template
+1. Wait for the notebook and the **Desktop** tab (RViz) to appear side by side.
+2. Leave **Robot** on `hsrb` and **Environment** on `apartment`.
+3. Click **Start world** and wait for `World ready: hsrb in the apartment.`
+   This takes about 100 seconds and loads the speech and planning models.
+4. Click **Play sample scene**.
 
-Follow these steps to create your own VRB lab using this template
+Everything after that runs on its own: speech regions, voices, roles, the
+counted instruction, the plan, and its execution in RViz. The whole chain takes
+a few minutes, most of it the language model on CPU.
 
-### Step 1: Create a GitHub Repository
+The shipped recording holds three phrases by two speakers:
 
-1. Log in to [GitHub](https://github.com/).
-2. Navigate to the [binder-template](https://github.com/IntEL4CoRo/binder-template) repository.
-3. Click the **Use this template** button (green) to create a new repository.
-   - Alternatively, you can **Fork** the repository if you want to sync with future updates.
-4. Name your new repository (e.g., `my-robotics-lab`).
-5. Set visibility `Public` and click **Create repository**.
+| | said by | words | expected role |
+|---|---|---|---|
+| 0 | voice 1 | *Put two forks from the drawer on the table.* | instruction |
+| 1 | voice 2 | *There is already a fork on the table.* | context, one fork fewer |
+| 2 | voice 1 | *The weather is nice today.* | ignored |
 
-### Step 2: Clone Your Repository
+Two forks were asked for, one is already there, so the sentence handed to the
+planner reads
 
-You can work with your repository either locally or using GitHub Codespace:
+> Put two forks from the drawer on the table. **Bring exactly 1 Fork.**
 
-#### Option A: Clone your newly created repository to your local machine:
+and the robot fetches one.
 
-   ```bash
-   git clone https://github.com/YOUR_USERNAME/your-repo-name.git
-   cd your-repo-name
-   ```
+---
 
-#### Option B: GitHub Codespace
+## The controls
 
-1. In your GitHub repository, click the **Code** button (green).
-2. Select the **Codespaces** tab.
-3. Click **Create codespace on main**.
-4. Wait for the codespace to build (first time takes a few minutes).
-5. Once ready, you'll have a full VS Code environment in your browser.
+### Robot and environment
 
-### Step 3: Config Your Repository
+`hsrb` · `pr2` · `tiago` and `apartment` · `kitchen`. Pick before starting the
+world; both are locked while a world stands. **Stop world** releases them.
 
-1. Add your own Jupyter Notebooks, Python code, URDF and other files to the repository, modify the `README.MD`.
-1. Modify the [requirements.txt](requirements.txt) to install additional Python packages your project needs:
+The apartment is the tested combination. Its cutlery drawer holds one fork, one
+spoon and one knife, and there are two apples, two mugs and two plates on the
+surfaces. There is no glass anywhere.
 
-   ```txt
-   # Example:
-   numpy
-   pandas
-   matplotlib
-   ```
-1. Configure Docker Environment
+### Start world / Stop world
 
-    If your project requires additional system packages (e.g., FFmpeg, ROS, or other APT packages) or build a ROS2 workspace, modify the [binder/Dockerfile](binder/Dockerfile):
+**Start world** launches the action server, which builds the semantic world,
+publishes it to RViz and writes the world description the language stages read.
+It also loads Whisper and the planner model, so the first run afterwards is not
+slowed down by that. Wait for `World ready` before doing anything else.
 
-    ```dockerfile
-    # Example:
-    USER root
-    RUN apt update && apt install -y ffmpeg
-    RUN mkdir -p ${REPO_DIR}/ros2_ws/src && \
-        cd ${REPO_DIR}/ros2_ws/src && \
-        git clone --depth=1 https://github.com/ros/ros_tutorials.git && \
-        cd ${REPO_DIR}/ros2_ws && \
-        rosdep update && apt update && \
-        rosdep install --from-paths src -y && \
-        colcon build --symlink-install
-    ```
+**Stop world** shuts it down. Do this between runs: a previous run leaves
+objects where it put them, and the next instruction is then grounded against a
+world that has already changed.
 
-#### **Use other base docker image (Advanced)**
+### Four ways to give it a scene
 
-The current template uses the following base Docker image: `intel4coro/jupyter-ros2:jazzy-py3.12`
+All four take the same route afterwards, so it makes no difference which one
+you use.
 
-This base image includes:
-- **ROS 2 Jazzy** - Robot Operating System 2 (Jazzy distribution)
-- **Python 3.12** - Installed via conda
-- **JupyterLab** - Notebook environment
-- **Conda/Mamba** - Package manager
-- **VSCode Server** - Browser-based VSCode
-- **VNC Desktop** - Virtual desktop for running linux native graphical applications like MuJoCo viewer, Rviz, Gazebo
+**Record (stops on silence)** — the one to use. It measures the room for half a
+second, treats anything three times above that as speech, and ends by itself
+once you have stopped talking for 1.5 seconds. Nothing to click twice.
 
-It is possible to use use other base images such as your own built docker images, official ROS images, just replace the base image in dockerfile and:
+**⏺ and the small player** — manual recording: click to start, click again to
+stop. Useful when the automatic end fires too early for you.
 
-1. **Install JupyterLab**
-1. **Expose port 8888**
+**Audio clip** — upload a `.wav`, `.webm`, `.mp3` or `.ogg` file. This is the
+reproducible route: the same file gives a comparable run, which is what an
+evaluation needs.
 
-Example Dockerfile using ROS1 official image:
+**Play sample scene** — the recording shipped in this repository, for showing
+the demo where no microphone is available.
 
-```dockerfile
-FROM ros:noetic-ros-base
+### Understand scene / Plan and execute
 
-ENV SHELL=/bin/bash
-ENV DEBIAN_FRONTEND=noninteractive
+Both are for going step by step instead of letting the chain run through.
 
-# Install jupyterlab and git
-RUN apt-get update && apt-get install -y python3-pip git
-RUN pip3 install jupyterlab
+**Understand scene** runs only the speech front-end: speech regions, voices,
+roles, counting, and the sentence for the planner. Nothing moves in RViz.
 
-# Expose port for jupyterlab
-EXPOSE 8888
+**Plan and execute** takes that sentence, asks the planner for a plan and hands
+the plan to the world. Enabled once a scene yielded an instruction.
 
-# Copy repo to the image (optional)
-ENV REPO_DIR=/home/repo
-RUN mkdir -p ${REPO_DIR}
-COPY . ${REPO_DIR}/
-WORKDIR ${REPO_DIR}
-# The entrypoint of the docker image
-COPY binder/entrypoint.sh /entrypoint.sh
-ENTRYPOINT ["/entrypoint.sh"]
+---
+
+## Reading the output
+
+### Voice activity
+
+The waveform with the kept regions shaded. Gaps are silence or non-vocal sound
+and were dropped before transcription — Whisper invents words over silence, so
+it only ever sees material where somebody spoke.
+
+### Heard phrases
+
+One row per phrase.
+
+| column | meaning |
+|---|---|
+| **#** | index, the number the model answers with |
+| **Time** | where the phrase sits in the recording |
+| **Voice** | which speaker, numbered by order of appearance; `?` when the phrase was too short to judge |
+| **Heard** | what Whisper transcribed |
+| **Role** | `Instruction`, `Context` or `Ignored`; `—` when nothing was judged at all |
+| **Effect** | for context phrases, how the task changes |
+
+### Voice distances
+
+How far apart the voices measured, as cosine distance between speaker
+embeddings. `0` is the same direction, `1` unrelated. Green is below the
+cutoff and was judged one voice, red above it and judged different voices.
+
+This table is the evidence behind the speaker numbers, not decoration. A
+verdict alone says "one voice"; a distance of 0.22 against a cutoff of 0.50
+also says the decision was comfortable. A value of 0.49 would be a coin toss
+and the same verdict.
+
+### Counted changes and the instruction
+
+`Counted changes: Fork: -1 → bring 1 Fork` is the arithmetic: what each context
+phrase asked to change, summed per object type, and the resulting absolute
+number where the instruction named one.
+
+**Instruction to planner** is the single sentence the planner receives. This is
+where this work ends — everything after it is the inherited planning and
+execution half.
+
+### The plan
+
+The raw plan as JSON, and the outcome. `Execution finished: ok` means the robot
+carried it out. Anything else names where it stopped.
+
+---
+
+## Worked examples
+
+Record these with the automatic recorder, or upload them as clips.
+
+### One person, one instruction
+
+> *Put a spoon on the table.*
+
+One phrase, role `Instruction`, no counting, plan executed.
+
+### Someone else corrects the count
+
+> *Put two spoons on the table.* — *Oh no, only one.*
+
+The second phrase becomes `Context` with an effect of one spoon fewer. The
+sentence reads `… Bring exactly 1 Spoon.` This also works when the same person
+says both, which is a self-correction rather than a third party speaking.
+
+### Background chatter
+
+> *Put a fork on the table.* — *The weather is nice today.*
+
+The second phrase is `Ignored` and does not reach the planner.
+
+### The same claim from two people versus twice from one
+
+> *Set the table for five people.* — *I already have one.* — *I already have one.*
+
+Word for word identical phrases, and the count depends on who said them:
+
+| | claims counted | needed |
+|---|---|---|
+| two speakers, one claim each | twice | 5 − 2 = **3** |
+| one speaker, saying it twice | once | 5 − 1 = **4** |
+
+Nothing in the words separates these two cases; only the voice does. That is
+why speaker separation is not an extra here but a requirement of the counting.
+A repeated claim is recognised by the triple (voice, object type, change), so
+one person repeating himself collapses while two people each count.
+
+### Naming a different object
+
+> *Bring me a spoon.* — *No, I already have a spoon, bring me a fork.*
+
+A replacement, not a quantity: the count stays untouched and the second phrase
+contributes its own clause instead.
+
+---
+
+## Known limits
+
+These are properties of the approach, not defects to work around.
+
+**Overlapping speech.** Two people talking at once produce one speech region,
+one voice and one transcription. The chain assumes phrases that are separated
+in time.
+
+**Less than 300 ms between speakers.** Phrases closer than that are merged into
+one region, with the same consequence.
+
+**At most one instruction per scene.** The schema cannot express two
+simultaneous commands. If two people instruct the robot differently, one of
+them is picked.
+
+**Quantities above one are rarely executed.** The counting produces the right
+number, but the planner turns "two forks" into two steps that it does not mark
+as the same thing, and the world holds one of each cutlery type. Judge the
+counting by the sentence it produces, not by whether the robot managed it.
+
+**A transcription error can end the run.** A misheard place name is the worst
+case: "from the door" instead of "from the drawer" names a location the world
+does not have, and no valid plan exists for it.
+
+**Synthetic speech distorts the measurements.** Two different espeak voices
+measured 0.03 apart where two real speakers measure 0.85. Use real recordings.
+
+---
+
+## What runs where
+
+| stage | what it does | how |
+|---|---|---|
+| recording | ends itself on silence | in the browser |
+| segmentation | speech regions | Silero VAD, threshold 0.5, minimum speech 250 ms, minimum silence 300 ms, 200 ms padding |
+| transcription | one call per region | faster-whisper `small`, English, beam 3 |
+| speaker separation | who spoke which region | ECAPA-TDNN embeddings, cosine distance, agglomerative clustering, cutoff 0.50, minimum 0.3 s per region |
+| role assignment | instruction, context or noise | Llama 3.1 8B Instruct against the world description, answer validated against a fixed schema, one correction attempt |
+| counting | net change per object type | plain Python, each voice's claim counted once |
+| planning and execution | inherited | see `pycram/demos/thesis_demo/planner` in the code repository |
+
+The cutoffs and window lengths are starting points, not calibrated values.
+Measured so far: 0.22, 0.23, 0.31 and 0.38 between regions of one voice against
+0.84 and 0.86 between two voices. The cutoff sits at 0.50, in the gap. Six
+measurements from two recordings are not a calibration.
+
+---
+
+## If something goes wrong
+
+**The launch ends in a timeout.** Open the link again. The image has to be
+pulled to the compute node once and that takes longer than the start-up
+allowance.
+
+**RViz is not visible.** Use the link above rather than a plain `labpath=` one:
+that opens single-document mode, which hides the second tab. Failing that,
+switch off `Simple` at the bottom left, and the `Desktop` tab appears.
+
+**Nothing happens after recording.** The first run loads models and takes
+minutes; the status line says what it is doing. If it says nothing at all,
+check the kernel indicator at the bottom right — a session that ran out of
+memory answers with a dead kernel.
+
+**Grounding errors when executing.** A previous run moved things. Stop the
+world and start it again.
+
+**Your own voice comes out as two speakers.** Distance above the cutoff. Short
+exclamations next to spoken sentences are what does it; the numbers are in the
+voice distance table, and the cutoff lives in `audio/diarization.py` in the
+code repository.
+
+---
+
+## Repository layout
+
+```
+notebooks/demo.ipynb          the entry point, one cell
+notebooks/vad_ui.py           the interface, the recorder, the panels
+notebooks/assets/             sample recording and the stylesheet
+binder/Dockerfile             the image; ARG CRAM_REVISION pins the demo code
+default.rviz                  the RViz view the lab opens with
+requirements.txt              Python dependencies of the image
 ```
 
-### Step 4: Commit Your Changes and Push to GitHub
-
-After making changes to your repository, you need to commit and push them to GitHub.
-
-#### Option A: Using Git Commands(Local Development)
-
-1. **Check the status of your changes:**
-
-   ```bash
-   git status
-   ```
-
-2. **Add the files you want to commit:**
-
-   ```bash
-   # Add all changed files
-   git add .
-
-   # Or add specific files
-   git add notebooks/my-notebook.ipynb
-   git add requirements.txt
-   ```
-
-3. **Commit your changes with a message:**
-
-   ```bash
-   git commit -m "Add MuJoCo robot simulation notebook"
-   ```
-
-4. **Push your changes to GitHub:**
-
-   ```bash
-   git push origin main
-   ```
-
-#### Option B: Using GitHub Codespace
-
-1. Click the **Source Control** icon in the left sidebar (or press `Ctrl+Shift+G`).
-2. You will see a list of changed files under "Changes".
-3. Click the **+** button next to each file to stage it (or click "Stage All Changes").
-4. Enter a commit message in the text box at the top.
-5. Click the **Commit** button (checkmark icon).
-6. Click **Sync Changes** to push to GitHub.
-
-### Step 5: Build Your Lab on Binder
-
-Once your repository is ready, you can launch it using the URL format described in the [Quick Start](#launcher-url-parameters) section.
-
-**Example:**
+The speech pipeline itself lives in a second repository and is cloned into the
+image at build time, pinned by commit:
 
 ```
-https://binder.intel4coro.de/v2/gh/my-gihub-username/my-robotics-lab/main?urlpath=lab/tree/notebooks/my-notebook.ipynb
+Dalyoooo/cognitive_robot_abstract_machine, branch binder-build
+  pycram/demos/thesis_demo/audio/       segmentation, transcription, speakers
+  pycram/demos/thesis_demo/dialogue/    role assignment, validation, counting
+  pycram/demos/thesis_demo/planner/     inherited
+  pycram/demos/thesis_demo/validation/  inherited
+  pycram/demos/thesis_demo/execution/   inherited
 ```
 
-> **Note:** The first time you launch, the server will build the Docker image, which may take a while. Subsequent launches will be faster.
-
-**Branch vs Commit Hash vs Tag**
-
-| Reference Type | Example | Behavior |
-|----------------|---------|----------|
-| Branch name | `main` | Binder checks for updates on every launch. If new commits exist, it rebuilds the image. |
-| Commit hash | `27ba27a` | Locks to a specific commit. No rebuilds even if new commits are pushed. |
-| Tag | `v1.0` | Locks to a specific tag. Stable release version. |
-
-**When to use each:**
-
-- **Branch name** (e.g., `main`): Use for development. Each launch checks for updates.
-- **Commit hash**: Use when you need a stable, reproducible environment. Example: `27ba27a`
-- **Tag**: Use for releases. Create a tag: `git tag v1.0 && git push origin v1.0`
-
-### Step 6: Verify Your Lab
-
-If the Docker build succeeds and you can access the JupyterLab interface normally, your VRB Lab is ready and you can start testing your code.
-
-**Troubleshooting:**
-
-- **Build failed**: Check the build error logs and modify `binder/Dockerfile` accordingly
-  
-  Common build problems and solutions:
-   | Issue | Solution |
-   |-------|----------|
-   | apt install fails | Run `apt update` before `apt install -y` and ensure packages exist in Ubuntu/Debian repositories |
-   | Permission denied | Add `USER root` before RUN commands in Dockerfile |
-   | fatal: Could not read from remote repository... | Make sure the repository URL you use for `git clone` is HTTPS instead of the SSH/git protocol. The same applies to any submodule URLs defined in `.gitmodules`|
-  | returned a non-zero code | It means the bash command failed during execution. Check the full build log with to see the exact error. The actual error message might be hidden further up in the logs, which can make it easy to miss.  |
-  | no such file or directory | The directory state is not preserved between two `RUN` instructions. For example, if you `cd` into a directory in the first `RUN`, and execute a script from that directory in the second `RUN`, it will fail. You need to either combine them into a multi-line `bash` command or use the `WORKDIR` instruction. |
-  
-
-- **Timeout error**: Refresh the page, and try again.
-- **Image builds successfully but fails to start and keep seeing timeout error**: Check if you have added a foreground script in `binder/entrypoint.sh`
-
-## Optimizing Docker Build Time (Advanced)
-
-To reduce build time, it's important to understand the Docker build cache mechanism:
-
-**How Docker Build Cache Works:**
-
-Docker caches each step (instruction) in your Dockerfile. When you rebuild:
-- If a step hasn't changed, Docker uses the cached result
-- If any step changes, ALL subsequent steps will be re-executed (no cache)
-
-**Key Principle: Order Matters!**
-
-Put time-consuming steps that rarely change near the TOP of your Dockerfile. Put frequently changing steps near the BOTTOM.
-
-Example:
-
-```dockerfile
-FROM intel4coro/jupyter-ros2:jazzy-py3.12
-
-# These steps are cached and rarely change - put them FIRST
-
-# This step downloads 2GB assets, better not to rerun it everytime. 
-RUN git clone --depth=1 https://github.com/google-deepmind/mujoco_menagerie.git
-
-# This copies your repo - changes often, put it LATER
-COPY . ${REPO_DIR}/
-
-# Any step after COPY runs EVERY time - cannot use cache
-
-```
-
-**Why This Matters:**
-
-- `COPY . ${REPO_DIR}/` copies your repository files to the container
-- Any step AFTER this line will ALWAYS re-run when you push code changes
-- Steps BEFORE this line can use cache if unchanged
-
-**Best Practices:**
-
-1. **Clone large repos first** - Put `git clone` BEFORE `COPY . ${REPO_DIR}/`
-2. **Install system packages early** - Put `apt install` commands before the COPY
-3. **Install Python packages early** - Put `pip install` before the COPY
-4. **Only put repo-specific steps after COPY** - Things that need your latest code
-
-## Local Development
-
-Besides launching on Binder, you can also develop and test your lab locally using Docker. This is useful for debugging and iterative development.
-
-### Prerequisites
-
-Before starting, ensure you have a linux machine with the following installed:
-
-| Tool | Description | Installation |
-|------|-------------|--------------|
-| **Docker** | Container runtime | [Get Docker](https://docs.docker.com/get-docker/) |
-| **Docker Compose** | Tool for defining multi-container apps | [Get Docker Compose](https://docs.docker.com/compose/install/) |
-
-> **Note:** Add your user to the `docker` group to run Docker without sudo:
-> ```bash
-> sudo usermod -aG docker $USER
-> ```
-
-### Development Workflow
-
-1. **Navigate to your repository directory:**
-   ```bash
-   cd /path/to/your-repo
-   ```
-
-2. **Build and start the container:**
-   ```bash
-   docker compose -f ./binder/docker-compose.yml up --build
-   ```
-
-   This will:
-   - Build the Docker image based on your `binder/Dockerfile`
-   - Start a container with JupyterLab, VSCode Server, and VNC
-   - Map ports 8888 (JupyterLab)
-
-3. **Access the development environment:**
-
-   | Service | URL | Description |
-   |---------|-----|-------------|
-   | **JupyterLab** | http://localhost:8888 | Notebook interface |
-
-
-4. **Edit files locally** using your favorite IDE (VSCode, PyCharm, etc.)
-
-   **Changes are reflected automatically:**
-   - If you modify Python files in your repo, changes appear immediately in the container (the repo is mounted as a volume)
-   - For Dockerfile changes, you'll need to rebuild: 
-      ```
-      docker compose -f ./binder/docker-compose.yml down
-      docker compose -f ./binder/docker-compose.yml up --build
-      ```
-
-   **File Permissions issue**:
-
-   Since the container runs as **root user**, any files created inside the container will be owned by root. This can cause permission issues when you try to edit or delete these files on your host machine.
-
-   **Solution:**
-
-   Change ownership of your project directory:
-   ```bash
-   sudo chown -R $USER:$USER /path/to/your-repo
-   ```
-
-4. **Stop and delete the container:**
-   ```bash
-   docker compose -f ./binder/docker-compose.yml down
-   ```
-
-### Using Host Display
-
-Instead of using the built-in VNC desktop, you can run GUI applications (like MuJoCo viewer) directly on your host machine's display. This provides better performance and a more native experience.
-
-**Setup Steps:**
-
-1. **Allow X11 connections from Docker:**
-   ```bash
-   # On host machine (Linux)
-   xhost +local:docker
-   ```
-
-2. **Edit `binder/docker-compose.yml` and uncomment the Host Display section:**
-
-   ```yaml
-    # ... existing config ...
-    # Use Host Display
-      - /tmp/.X11-unix:/tmp/.X11-unix:rw  # X11 socket for GUI apps
-    environment:
-      - DISPLAY=${DISPLAY}  # Use host display for GUI apps
-   ```
- 3. Docker compose down and up again.
-
-### GPU Configuration
-
-If you have an NVIDIA GPU, you can configure Docker to use it for accelerated computation (e.g., for MuJoCo, PyTorch, TensorFlow).
-
-Install NVIDIA Container Toolkit: https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html
-
-Edit `binder/docker-compose.yml` and uncomment the GPU section:
-
-```yaml
-services:
-  binder-template:
-    # ... existing config ...
-    # GPU support
-     - NVIDIA_DRIVER_CAPABILITIES=all
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              count: all
-              capabilities: [gpu]
-```
-
-Then compose down and up:
-```bash
-docker compose -f ./binder/docker-compose.yml down
-docker compose -f ./binder/docker-compose.yml up --build
-```
-
-**Verify GPU Access:**
-
-Inside the container terminal, verify GPU is available:
-```bash
-# Check NVIDIA driver
-nvidia-smi
-```
-
-
-### Troubleshooting
-
-
-| Issue | Solution |
-|-------|----------|
-| Port already in use | Stop other services using port 8888 or change port mappings in `docker-compose.yml` |
-| Permission denied | Run Docker without sudo or fix file permissions |
-| Container exits immediately | Check logs: `docker compose logs` |
-| Changes not reflected | Ensure volume mount is correct in `docker-compose.yml` |
+Changing the pipeline means committing there, pointing `ARG CRAM_REVISION` at
+the new commit, and pushing this repository too — the image is cached per
+commit of this repository, so a code-only change would otherwise be served from
+the previous build.
