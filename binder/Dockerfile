@@ -43,7 +43,7 @@ ENV PYTHONPATH=${CRAM_REPOSITORY}/pycram/demos
 # Pinning the commit fixes what this image contains and makes the clone layer
 # rebuild whenever the demo code moves; a plain branch clone would be served
 # from the build cache and keep shipping the previous state.
-ARG CRAM_REVISION=8c800e0b44ddc6665e0b30cf2c9cae47b5198dfb
+ARG CRAM_REVISION=8691f5fdeafc46e7534ee9daac0e25e31e55fb55
 
 # The base image carries a half-removed mlflow-skinny: its metadata says the
 # package is installed while mlflow/__init__.py is gone. poetry resolves a newer
