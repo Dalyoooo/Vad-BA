@@ -247,10 +247,38 @@ measured 0.03 apart where two real speakers measure 0.85. Use real recordings.
 | counting | net change per object type | plain Python, each voice's claim counted once |
 | planning and execution | inherited | see `pycram/demos/thesis_demo/planner` in the code repository |
 
+### The voice cutoff
+
 The cutoffs and window lengths are starting points, not calibrated values.
 Measured so far: 0.22, 0.23, 0.31 and 0.38 between regions of one voice against
 0.84 and 0.86 between two voices. The cutoff sits at 0.50, in the gap. Six
 measurements from two recordings are not a calibration.
+
+Finding the right value means trying several against the same recordings, so
+the cutoff can be set for a session without touching the code. In a terminal
+before the world is started, or in a cell above the interface:
+
+```python
+import os
+os.environ["VAD_VOICE_CUTOFF"] = "0.7"
+```
+
+Then **Stop world** and **Start world**, and the next scene is judged with that
+cutoff. The value shows in the caption of the voice distance table, so a run is
+always self-describing.
+
+Which way to move it is a trade-off, and the two errors do not weigh the same:
+
+| moving it | risks | consequence |
+|---|---|---|
+| lower | splitting one voice in two | counts come out too high |
+| higher | merging two voices into one | counts come out too low, and two speakers making the same claim become indistinguishable from one speaker repeating himself |
+
+The second is the more damaging one here, because telling those two cases apart
+is the whole reason speaker separation is in this pipeline. The measurements
+above came from clearly different voices; two similar speakers sit lower than
+0.84, and how much lower is exactly what a recording of your own would tell
+you.
 
 ---
 
