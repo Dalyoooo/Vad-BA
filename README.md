@@ -242,24 +242,34 @@ measured 0.03 apart where two real speakers measure 0.85. Use real recordings.
 | recording | ends itself on silence | in the browser, with echo cancellation, noise suppression and automatic gain off so the voice reaches the pipeline unaltered |
 | segmentation | speech regions | Silero VAD, threshold 0.5, minimum speech 250 ms, minimum silence 300 ms, 200 ms padding |
 | transcription | one call per region | faster-whisper `small`, English, beam 3 |
-| speaker separation | who spoke which region | ECAPA-TDNN embeddings, cosine distance, agglomerative clustering, cutoff 0.65; a region under 0.3 s is not judged, one under 1 s joins a voice but cannot found one |
+| speaker separation | who spoke which region | ECAPA-TDNN embeddings, cosine distance, agglomerative clustering, cutoff 0.72; a region under 0.3 s is not judged, one under 1 s joins a voice but cannot found one |
 | role assignment | instruction, context or noise | Llama 3.1 8B Instruct against the world description, answer validated against a fixed schema, one correction attempt |
 | counting | net change per object type | plain Python, each voice's claim counted once |
 | planning and execution | inherited | see `pycram/demos/thesis_demo/planner` in the code repository |
 
 ### The voice cutoff
 
-The cutoffs and window lengths are starting points, not calibrated values.
-Measured between regions of one voice: 0.22, 0.23, 0.31 and 0.38 on a local
-microphone, and 0.59 through this lab's browser recorder, which carries the
-voice as Opus at a lower bandwidth. Between two voices: 0.84 and 0.86. The
-cutoff sits at 0.65, in the gap that is left once the browser channel is
-counted. A handful of measurements from a few recordings is not a calibration.
+One voice measures much wider here than on a local microphone, because it
+reaches the pipeline as Opus rather than as it was spoken. Between regions of a
+single speaker:
 
-Length moves the distance as much as the person does. A 0.78 s "Um" measured
-0.66 and 0.74 against the same speaker's own sentences, which is why a region
-under a second may join a voice but not found one. Such a region is marked with
-`*` in the heard-phrases table.
+| recorded through | one voice | two voices |
+|---|---|---|
+| a local microphone | 0.22 to 0.38 | not measured |
+| this lab, while the browser still processed the sound | 0.59 to 0.74 | not measured |
+| this lab, recording raw | 0.48 to 0.64 | 0.84 and 0.86 |
+
+The cutoff sits at 0.72, near the middle of what is left between those two
+groups. Every earlier value was inside the same-voice range rather than above
+it: 0.30 and 0.50 each split one speaker into three, and 0.65 cleared the widest
+same-voice pair by 0.01, which is luck and not a margin. A handful of
+measurements from a few recordings is still not a calibration.
+
+Length moves the distance as much as the person does. The widest pair one
+speaker produced, 0.64, was between his two shortest and most hesitant
+fragments, while his two full sentences sat at 0.49. A 0.78 s "Um" reached 0.74.
+That is why a region under a second may join a voice but not found one. Such a
+region is marked with `*` in the heard-phrases table.
 
 Finding the right value means trying several against the same recordings, so
 the cutoff can be set for a session without touching the code. In a terminal
@@ -317,6 +327,12 @@ memory answers with a dead kernel.
 
 **Grounding errors when executing.** A previous run moved things. Stop the
 world and start it again.
+
+**A change to the demo code did not take effect.** The image pins the code
+repository to one commit, `CRAM_REVISION` in `binder/Dockerfile`. A commit in
+that repository reaches this lab only when the pin is moved to it and the lab is
+rebuilt. The caption of the voice distance table names the revision a run
+actually used, so compare it against the pin before looking any further.
 
 **Your own voice comes out as two speakers.** The distance between two of your
 regions came out above the cutoff. Two things cause it. A short exclamation next

@@ -381,6 +381,34 @@ def _role_badge(role):
         f"{role_name}</span>"
     )
 
+CODE_REPOSITORY_VARIABLE = "CRAM_REPOSITORY"
+"""Environment variable naming the checkout the demo code is imported from."""
+
+
+def _deployed_revision():
+    """Return the code revision this lab is running, or None.
+
+    The image pins the code repository to one commit, so a rebuilt lab and a
+    cached one are otherwise indistinguishable until a scene has been run and
+    the cutoff read off the table. The clone keeps its git directory, so the
+    answer is available at runtime.
+    """
+    repository = os.environ.get(CODE_REPOSITORY_VARIABLE)
+    if not repository:
+        return None
+    try:
+        finished = subprocess.run(
+            ["git", "-C", repository, "rev-parse", "--short", "HEAD"],
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    revision = finished.stdout.strip()
+    return revision if finished.returncode == 0 and revision else None
+
+
 def _voice_distance_table(diarizer):
     """Show how far apart the voices measured, against the cut that was applied.
 
@@ -431,7 +459,8 @@ def _voice_distance_table(diarizer):
         "<section class='vad-results-card' aria-labelledby='vad-distance-title'>"
         "<h4 class='vad-results-title' id='vad-distance-title'>Voice distances</h4>"
         f"<p class='vad-results-meta'>{escape(str(backend))}; "
-        f"same voice below {threshold:.2f}. Each pair is shown once.</p>"
+        f"same voice below {threshold:.2f}. Each pair is shown once. "
+        f"Code revision {escape(_deployed_revision() or 'unknown')}.</p>"
         "<p class='vad-results-legend'>"
         "<span class='vad-legend-chip vad-legend-same'>Within cutoff</span>"
         "<span class='vad-legend-chip vad-legend-different'>Above cutoff</span>"

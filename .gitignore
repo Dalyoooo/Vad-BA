@@ -162,3 +162,7 @@ cython_debug/
 # Agent scratch files, not part of the lab
 AGENTS.md
 .codex/
+
+# Recordings kept from the lab microphone, for calibrating the voice cutoff.
+notebooks/recordings/
+notebooks/scene-recording.webm
