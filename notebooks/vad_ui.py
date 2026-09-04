@@ -25,6 +25,7 @@ import sys
 import threading
 import time
 import traceback
+from datetime import datetime, timezone
 from html import escape
 from pathlib import Path
 
@@ -442,14 +443,20 @@ def _voice_distance_table(diarizer):
     )
 
 
-def _utterance_table(utterances, triage):
+def _utterance_table(utterances, triage, diarizer=None):
     rows = []
     interpretation = triage.interpretation
+    # Segments too short to found a voice were placed by their distance to a
+    # longer one. That is a weaker claim than a clustered label, and the table
+    # is the only place a reader could tell the difference.
+    attached = set(getattr(diarizer, "attached", ()) or ())
     for index, utterance in enumerate(utterances):
         # Without an interpretation nothing was judged at all. Painting every
         # row as noise would claim a decision the model never made.
         role = interpretation.role_of(index) if interpretation is not None else None
         speaker = "?" if utterance.speaker_id is None else str(utterance.speaker_id)
+        if index in attached:
+            speaker += " *"
         effect = escape(interpretation.effect_of(index)) if interpretation else ""
         rows.append(
             "<tr>"
@@ -465,7 +472,11 @@ def _utterance_table(utterances, triage):
     return (
         "<section class='vad-results-card' aria-labelledby='vad-utterance-title'>"
         "<h4 class='vad-results-title' id='vad-utterance-title'>Heard phrases</h4>"
-        "<p class='vad-results-meta'>Each phrase is shown with its interpretation.</p>"
+        "<p class='vad-results-meta'>Each phrase is shown with its "
+        "interpretation." + (
+            " A voice marked <b>*</b> was too short to be judged on its own and "
+            "was joined to the voice it sounded closest to." if attached else ""
+        ) + "</p>"
         "<div class='vad-results-scroll'>"
         "<table class='vad-utterance-table'>"
         "<colgroup><col class='vad-index'><col class='vad-time'>"
@@ -581,6 +592,21 @@ AUTO_RECORDING_SILENCE_HOLD_MS = 1500
 AUTO_RECORDING_MAX_MS = 40000
 """Hard limit, so a stuck microphone cannot record forever."""
 
+AUTO_RECORDING_BITRATE = 128000
+"""Bits per second the browser encodes with.
+
+Opus at the default rate is tuned for speech being understood, not for a voice
+being measured. A higher rate keeps more of what tells two speakers apart.
+"""
+
+KEPT_RECORDINGS_DIR_NAME = "recordings"
+"""Directory each finished recording is copied into, beside this module.
+
+The voice cutoff can only be calibrated against recordings made through this
+exact channel, and a recording that lives only in memory cannot be measured
+again. Kept here, the lab's file browser can download them.
+"""
+
 SAMPLE_SCENE_NAME = "assets/sample-scene.webm"
 """A recorded scene shipped with the repository.
 
@@ -601,6 +627,25 @@ def sample_scene_path():
 def _auto_recording_path():
     """Where the finished recording lands, next to this module."""
     return Path(__file__).resolve().parent / AUTO_RECORDING_NAME
+
+
+def _keep_recording(audio):
+    """Copy a finished recording aside, named by when it was made.
+
+    :returns: the path it was kept at, or None when it could not be written.
+    """
+    directory = Path(__file__).resolve().parent / KEPT_RECORDINGS_DIR_NAME
+    kept = directory / (
+        datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ") + Path(AUTO_RECORDING_NAME).suffix
+    )
+    try:
+        directory.mkdir(exist_ok=True)
+        kept.write_bytes(audio)
+    except OSError:
+        # Keeping a copy is for later calibration; failing to is no reason to
+        # drop a recording the user is waiting on.
+        return None
+    return kept
 
 
 def _auto_recording_api_path():
@@ -683,8 +728,18 @@ def _auto_recorder_script():
 
   button.onclick = function () {{
     button.disabled = true;
-    navigator.mediaDevices.getUserMedia({{audio: true}}).then(function (stream) {{
-      var recorder = new MediaRecorder(stream);
+    // Chrome cleans a microphone up for a phone call by default: it cancels
+    // echo, suppresses noise and rides the gain. All three rewrite the voice,
+    // and the speaker embedding is measured on what is left, so two regions of
+    // one person can end up further apart than two people. Off, the recording
+    // is rawer and the distances describe the speaker.
+    navigator.mediaDevices.getUserMedia({{audio: {{
+      echoCancellation: false,
+      noiseSuppression: false,
+      autoGainControl: false,
+      channelCount: 1
+    }}}}).then(function (stream) {{
+      var recorder = new MediaRecorder(stream, {{audioBitsPerSecond: {AUTO_RECORDING_BITRATE}}});
       var chunks = [];
       var audioContext = new (window.AudioContext || window.webkitAudioContext)();
       var analyser = audioContext.createAnalyser();
@@ -787,6 +842,7 @@ def _watch_for_auto_recording(on_audio):
             except OSError:
                 continue
             if audio:
+                _keep_recording(audio)
                 on_audio(audio)
 
     threading.Thread(target=work, daemon=True).start()
@@ -1008,7 +1064,7 @@ def run_vad_ui():
             session["triage"] = triage
 
             table_area.value = (
-                _utterance_table(utterances, triage)
+                _utterance_table(utterances, triage, _ensure_diarizer())
                 + _voice_distance_table(_ensure_diarizer())
             )
             if triage.outcome is Outcome.OK:

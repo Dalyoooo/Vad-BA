@@ -239,10 +239,10 @@ measured 0.03 apart where two real speakers measure 0.85. Use real recordings.
 
 | stage | what it does | how |
 |---|---|---|
-| recording | ends itself on silence | in the browser |
+| recording | ends itself on silence | in the browser, with echo cancellation, noise suppression and automatic gain off so the voice reaches the pipeline unaltered |
 | segmentation | speech regions | Silero VAD, threshold 0.5, minimum speech 250 ms, minimum silence 300 ms, 200 ms padding |
 | transcription | one call per region | faster-whisper `small`, English, beam 3 |
-| speaker separation | who spoke which region | ECAPA-TDNN embeddings, cosine distance, agglomerative clustering, cutoff 0.50, minimum 0.3 s per region |
+| speaker separation | who spoke which region | ECAPA-TDNN embeddings, cosine distance, agglomerative clustering, cutoff 0.65; a region under 0.3 s is not judged, one under 1 s joins a voice but cannot found one |
 | role assignment | instruction, context or noise | Llama 3.1 8B Instruct against the world description, answer validated against a fixed schema, one correction attempt |
 | counting | net change per object type | plain Python, each voice's claim counted once |
 | planning and execution | inherited | see `pycram/demos/thesis_demo/planner` in the code repository |
@@ -250,9 +250,16 @@ measured 0.03 apart where two real speakers measure 0.85. Use real recordings.
 ### The voice cutoff
 
 The cutoffs and window lengths are starting points, not calibrated values.
-Measured so far: 0.22, 0.23, 0.31 and 0.38 between regions of one voice against
-0.84 and 0.86 between two voices. The cutoff sits at 0.50, in the gap. Six
-measurements from two recordings are not a calibration.
+Measured between regions of one voice: 0.22, 0.23, 0.31 and 0.38 on a local
+microphone, and 0.59 through this lab's browser recorder, which carries the
+voice as Opus at a lower bandwidth. Between two voices: 0.84 and 0.86. The
+cutoff sits at 0.65, in the gap that is left once the browser channel is
+counted. A handful of measurements from a few recordings is not a calibration.
+
+Length moves the distance as much as the person does. A 0.78 s "Um" measured
+0.66 and 0.74 against the same speaker's own sentences, which is why a region
+under a second may join a voice but not found one. Such a region is marked with
+`*` in the heard-phrases table.
 
 Finding the right value means trying several against the same recordings, so
 the cutoff can be set for a session without touching the code. In a terminal
@@ -266,6 +273,17 @@ os.environ["VAD_VOICE_CUTOFF"] = "0.7"
 Then **Stop world** and **Start world**, and the next scene is judged with that
 cutoff. The value shows in the caption of the voice distance table, so a run is
 always self-describing.
+
+Every recording made here is kept in `notebooks/recordings/`, named by the time
+it was made, and can be downloaded from the file browser on the left. That is
+what makes a real calibration possible: the same recordings measured against
+several cutoffs, rather than one verdict per attempt. In the code repository,
+
+```
+python -m thesis_demo.audio.diarization <recording.webm> ecapa
+```
+
+prints each region with its length and voice and the full distance matrix.
 
 Which way to move it is a trade-off, and the two errors do not weigh the same:
 
@@ -300,10 +318,14 @@ memory answers with a dead kernel.
 **Grounding errors when executing.** A previous run moved things. Stop the
 world and start it again.
 
-**Your own voice comes out as two speakers.** Distance above the cutoff. Short
-exclamations next to spoken sentences are what does it; the numbers are in the
-voice distance table, and the cutoff lives in `audio/diarization.py` in the
-code repository.
+**Your own voice comes out as two speakers.** The distance between two of your
+regions came out above the cutoff. Two things cause it. A short exclamation next
+to a spoken sentence measures far from it, which is why regions under a second
+no longer found a voice of their own. And a cutoff calibrated on one microphone
+does not carry to another. The numbers are in the voice distance table; raise
+`VAD_VOICE_CUTOFF` as above, or measure your own recordings with the command in
+"The voice cutoff" and move the default in `audio/diarization.py` in the code
+repository.
 
 ---
 
